@@ -1,0 +1,109 @@
+:root {
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Admin Dark Theme Tokens */
+  --admin-bg: #0F172A;
+  --admin-surface: #1E293B;
+  --admin-surface-raised: #334155;
+  --admin-border: #334155;
+  --admin-primary: #6366F1;
+  --admin-primary-hover: #4F46E5;
+  --admin-text: #F8FAFC;
+  --admin-text-secondary: #94A3B8;
+  --admin-success: #10B981;
+  --admin-warning: #F59E0B;
+  --admin-error: #EF4444;
+
+  /* Learning Light Theme Tokens */
+  --learn-bg: #F8FAFC;
+  --learn-surface: #FFFFFF;
+  --learn-surface-raised: #F1F5F9;
+  --learn-border: #E2E8F0;
+  --learn-primary: #2563EB;
+  --learn-primary-hover: #1D4ED8;
+  --learn-text: #0F172A;
+  --learn-text-secondary: #64748B;
+  --learn-success: #059669;
+  --learn-warning: #D97706;
+  --learn-error: #DC2626;
+
+  /* Spacing Grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Transitions */
+  --duration-fast: 100ms;
+  --duration-normal: 150ms;
+  --duration-slow: 250ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Base Reset & Typography */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Reduced Motion Compliance */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+  }
+}
+
+/* Dynamic theme variables */
+body.theme-admin {
+  background-color: var(--admin-bg);
+  color: var(--admin-text);
+}
+
+body.theme-learn {
+  background-color: var(--learn-bg);
+  color: var(--learn-text);
+}
+
+/* Common Layout Components */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  padding: var(--space-8);
+  min-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+.theme-admin ::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+.theme-learn ::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
