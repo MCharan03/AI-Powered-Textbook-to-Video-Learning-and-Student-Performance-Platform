@@ -85,7 +85,7 @@ def test_e2e_pipeline_review_and_learning_lifecycle(client, db_session):
     res_upload = client.post(
         "/admin/textbooks",
         headers=admin_headers,
-        data={"title": "Python Architecture Textbook"},
+        data={"title": "Python Architecture Textbook", "subject_id": 1},
         files={"file": ("python_arch.pdf", io.BytesIO(pdf_content), "application/pdf")}
     )
     assert res_upload.status_code == 201
@@ -106,7 +106,9 @@ def test_e2e_pipeline_review_and_learning_lifecycle(client, db_session):
     # Step 4: Check Hierarchy
     res_hier = client.get(f"/admin/textbooks/{tb_id}/hierarchy", headers=admin_headers)
     assert res_hier.status_code == 200
-    assert len(res_hier.json()["chapters"]) > 0
+    chapters = res_hier.json()["chapters"]
+    assert len(chapters) > 0
+    tb_topic_ids = {t["id"] for ch in chapters for t in ch.get("topics", [])}
 
     # Step 5: Review Queue - Verify generated content is in pending_review
     res_rev = client.get("/admin/review/items", headers=admin_headers)
@@ -114,8 +116,8 @@ def test_e2e_pipeline_review_and_learning_lifecycle(client, db_session):
     items = res_rev.json()
     assert len(items) > 0
 
-    video_item = next(i for i in items if i["type"] == "video")
-    quiz_item = next(i for i in items if i["type"] == "quiz")
+    video_item = next(i for i in items if i["type"] == "video" and (not tb_topic_ids or i.get("topic_id") in tb_topic_ids))
+    quiz_item = next(i for i in items if i["type"] == "quiz" and (not tb_topic_ids or i.get("topic_id") in tb_topic_ids))
     video_id = video_item["item_id"]
     quiz_id = quiz_item["item_id"]
 

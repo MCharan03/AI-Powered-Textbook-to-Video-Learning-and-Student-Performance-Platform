@@ -5,6 +5,8 @@ interface SurfacePanelProps {
   elevation?: 'level0' | 'level1' | 'level2';
   style?: React.CSSProperties;
   className?: string;
+  title?: string;
+  actions?: React.ReactNode;
 }
 
 export const SurfacePanel: React.FC<SurfacePanelProps> = ({
@@ -12,6 +14,8 @@ export const SurfacePanel: React.FC<SurfacePanelProps> = ({
   elevation = 'level1',
   style,
   className,
+  title,
+  actions,
 }) => {
   const isDark = document.body.className.includes('theme-admin');
 
@@ -37,6 +41,16 @@ export const SurfacePanel: React.FC<SurfacePanelProps> = ({
 
   return (
     <div style={baseStyle} className={className}>
+      {(title || actions) && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          {title && (
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: isDark ? 'var(--admin-text)' : 'var(--learn-text)' }}>
+              {title}
+            </h3>
+          )}
+          {actions && <div>{actions}</div>}
+        </div>
+      )}
       {children}
     </div>
   );

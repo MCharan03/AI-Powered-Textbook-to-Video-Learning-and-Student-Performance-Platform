@@ -55,10 +55,15 @@ export const VideoPlayerWrapper: React.FC<VideoPlayerWrapperProps> = ({ video, o
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  // Pre-rendered video fallback: if mock or placeholder url, render HTML5 video with canvas/sample stream
-  const videoSrc = video.video_url.startsWith('http')
-    ? video.video_url
-    : `http://localhost:8000${video.video_url}`;
+  const resolveVideoSrc = (rawUrl?: string): string => {
+    if (!rawUrl) return '';
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      return rawUrl;
+    }
+    return rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
+  };
+
+  const videoSrc = resolveVideoSrc(video.video_url);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

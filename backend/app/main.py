@@ -1,15 +1,19 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+import mimetypes
 import os
+from starlette.staticfiles import StaticFiles
+from starlette.responses import Response, StreamingResponse
 
 from .core.config import settings
 from .core.database import engine, Base
-from .routers import auth, admin, learning
+from .core.migrations import sync_sqlite_schema
+from .routers import auth, admin, learning, assignments
 
 # Initialize database schema
 Base.metadata.create_all(bind=engine)
+sync_sqlite_schema(engine)
 
 app = FastAPI(
     title="AI-Powered Textbook-to-Video Learning & Student Performance Platform API",
@@ -56,13 +60,99 @@ def readiness():
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(learning.router)
+app.include_router(assignments.router)
 
-# Mount asset folder if exists
-static_dir = os.path.join(os.getcwd(), "uploads")
-os.makedirs(static_dir, exist_ok=True)
-app.mount("/assets", StaticFiles(directory=static_dir), name="assets")
 
-# Mount static media directory for pre-rendered video assets (NFR-002, ARCH-V-005)
+class RangeStaticFiles(StaticFiles):
+    """
+    StaticFiles handler supporting RFC 7233 Byte Range Requests (HTTP 206 Partial Content),
+    Accept-Ranges, Content-Range, and streaming media playback for HTML5 video elements.
+    """
+    def file_response(self, full_path, stat_result, scope=None, status_code=200):
+        method = scope.get("method", "GET") if scope else "GET"
+        range_header = None
+        if scope and "headers" in scope:
+            for k, v in scope["headers"]:
+                if k.lower() == b"range":
+                    range_header = v.decode("latin-1")
+                    break
+
+        file_size = stat_result.st_size
+        content_type, _ = mimetypes.guess_type(full_path)
+        content_type = content_type or "application/octet-stream"
+
+        if not range_header or not range_header.startswith("bytes="):
+            res = super().file_response(full_path, stat_result, scope, status_code)
+            res.headers["Accept-Ranges"] = "bytes"
+            return res
+
+        ranges = range_header[6:].split("-")
+        try:
+            start = int(ranges[0]) if ranges[0] else 0
+            end = int(ranges[1]) if len(ranges) > 1 and ranges[1] else file_size - 1
+        except ValueError:
+            return Response(
+                status_code=416,
+                headers={"Content-Range": f"bytes */{file_size}", "Accept-Ranges": "bytes"}
+            )
+
+        if start >= file_size or end >= file_size or start > end:
+            return Response(
+                status_code=416,
+                headers={"Content-Range": f"bytes */{file_size}", "Accept-Ranges": "bytes"}
+            )
+
+        content_length = end - start + 1
+
+        if method == "HEAD":
+            headers = {
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(content_length),
+                "Content-Type": content_type,
+            }
+            return Response(status_code=206, headers=headers)
+
+        def iterfile():
+            with open(full_path, "rb") as f:
+                f.seek(start)
+                remaining = content_length
+                chunk_size = 64 * 1024
+                while remaining > 0:
+                    read_size = min(chunk_size, remaining)
+                    chunk = f.read(read_size)
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(content_length),
+            "Content-Type": content_type,
+        }
+        return StreamingResponse(iterfile(), status_code=206, headers=headers)
+
+
+# Resolve upload and media directories canonically
+uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+if not os.path.exists(uploads_dir) and os.path.exists(os.path.join(os.getcwd(), "uploads")):
+    uploads_dir = os.path.join(os.getcwd(), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+
+videos_dir = os.path.join(uploads_dir, "videos")
+os.makedirs(videos_dir, exist_ok=True)
+
 media_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 os.makedirs(media_dir, exist_ok=True)
-app.mount("/static", StaticFiles(directory=media_dir), name="static")
+
+# Mount asset folder for uploads and storage assets
+app.mount("/assets", RangeStaticFiles(directory=uploads_dir), name="assets")
+
+# Mount videos folder directly for clean canonical video URL mapping (e.g. /videos/1/video_1.mp4)
+app.mount("/videos", RangeStaticFiles(directory=videos_dir), name="videos")
+
+# Mount static media directory for pre-rendered static assets
+app.mount("/static", RangeStaticFiles(directory=media_dir), name="static")
+

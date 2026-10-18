@@ -5,9 +5,8 @@ import { api } from './api';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, pass: string) => Promise<void>;
+  login: (identifier: string, pass: string, role?: string) => Promise<void>;
   logout: () => void;
-  quickSwitch: (role: UserRole) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -44,10 +43,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [user]);
 
-  const login = async (username: string, pass: string) => {
+  const login = async (identifier: string, pass: string, role?: string) => {
     setLoading(true);
     try {
-      await api.login(username, pass);
+      await api.login(identifier, pass, role);
       const currentUser = await api.getCurrentUser();
       setUser(currentUser);
     } finally {
@@ -61,19 +60,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     document.body.className = 'theme-learn';
   };
 
-  const quickSwitch = async (role: UserRole) => {
-    const passwords: Record<UserRole, { email: string; pass: string }> = {
-      admin: { email: 'admin@example.com', pass: 'AdminPass123!' },
-      student: { email: 'student@example.com', pass: 'StudentPass123!' },
-      teacher: { email: 'teacher@example.com', pass: 'TeacherPass123!' },
-      parent: { email: 'parent@example.com', pass: 'ParentPass123!' },
-    };
-    const cred = passwords[role];
-    await login(cred.email, cred.pass);
-  };
-
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, quickSwitch }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

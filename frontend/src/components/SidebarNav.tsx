@@ -9,35 +9,70 @@ interface SidebarNavProps {
 export const SidebarNav: React.FC<SidebarNavProps> = ({ currentRoute, onRouteChange }) => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const isReadOnly = user?.role === 'parent' || user?.role === 'teacher';
+  const isParent = user?.role === 'parent';
+  const isTeacher = user?.role === 'teacher';
 
-  const adminNavItems = [
-    { id: 'admin-dashboard', label: 'Dashboard & Upload', path: '/admin' },
-    { id: 'admin-pipeline', label: 'AI Pipeline Monitor', path: '/admin/pipeline' },
-    { id: 'admin-hierarchy', label: 'Extracted Hierarchy', path: '/admin/hierarchy' },
-    { id: 'admin-review', label: 'Review & Approval Gate', path: '/admin/review' },
-    { id: 'admin-users', label: 'User Governance', path: '/admin/users' },
-    { id: 'admin-settings', label: 'Mastery Settings', path: '/admin/settings' },
+  interface NavGroup {
+    title?: string;
+    items: { id: string; label: string; icon?: string }[];
+  }
+
+  const adminNavGroups: NavGroup[] = [
+    {
+      items: [
+        { id: 'admin-dashboard', label: 'Dashboard', icon: '📊' },
+      ],
+    },
+    {
+      title: 'Users',
+      items: [
+        { id: 'admin-students', label: 'Students', icon: '🎓' },
+        { id: 'admin-parents', label: 'Parents', icon: '👨‍👩‍👧' },
+        { id: 'admin-teachers', label: 'Teachers', icon: '👨‍🏫' },
+      ],
+    },
+    {
+      title: 'Academic',
+      items: [
+        { id: 'admin-subjects', label: 'Subjects', icon: '📚' },
+        { id: 'admin-chapters', label: 'Chapters', icon: '📑' },
+        { id: 'admin-topics', label: 'Topics', icon: '🏷️' },
+        { id: 'admin-subtopics', label: 'Subtopics', icon: '🔹' },
+      ],
+    },
+    {
+      title: 'Pipeline & Content',
+      items: [
+        { id: 'admin-textbooks', label: 'Textbooks & Ingestion', icon: '📖' },
+        { id: 'admin-video-plans', label: 'Video Plans', icon: '🎬' },
+        { id: 'admin-script-review', label: 'Script Review', icon: '📝' },
+        { id: 'admin-video-review', label: 'Video Review', icon: '🎥' },
+        { id: 'admin-quizzes', label: 'Quizzes & Review', icon: '🎯' },
+        { id: 'admin-pipeline', label: 'Processing Monitor', icon: '⚡' },
+        { id: 'admin-hierarchy', label: 'Hierarchy Viewer', icon: '🌲' },
+        { id: 'admin-review', label: 'Content Review', icon: '🛡️' },
+        { id: 'admin-settings', label: 'Settings', icon: '⚙️' },
+      ],
+    },
   ];
 
   const studentNavItems = [
-    { id: 'student-dashboard', label: 'Learning Dashboard', path: '/learn' },
-    { id: 'student-video', label: 'Pre-Rendered Lessons', path: '/learn/video' },
-    { id: 'student-quiz', label: 'Topic Quizzes', path: '/learn/quiz' },
-    { id: 'student-adaptive', label: 'Adaptive Remediation', path: '/learn/adaptive' },
-    { id: 'student-mastery', label: 'Progress & Mastery', path: '/learn/mastery' },
+    { id: 'student-dashboard', label: 'Learning Dashboard', icon: '🏠' },
+    { id: 'student-assignments', label: 'Assignments', icon: '📝' },
+    { id: 'student-video', label: 'Pre-Rendered Lessons', icon: '🎬' },
+    { id: 'student-quiz', label: 'Topic Quizzes', icon: '🎯' },
+    { id: 'student-adaptive', label: 'Adaptive Remediation', icon: '🔄' },
+    { id: 'student-mastery', label: 'Progress & Mastery', icon: '📈' },
   ];
 
-  const readOnlyNavItems = [
-    { id: 'readonly-dashboard', label: 'Student Progress Summary', path: '/learn/summary' },
+  const parentNavItems = [
+    { id: 'parent-dashboard', label: "My Child's Learning", icon: '👨‍👩‍👧' },
   ];
 
-  let items = studentNavItems;
-  if (isAdmin) {
-    items = adminNavItems;
-  } else if (isReadOnly) {
-    items = readOnlyNavItems;
-  }
+  const teacherNavItems = [
+    { id: 'readonly-dashboard', label: 'My Students & Class', icon: '👨‍🏫' },
+    { id: 'teacher-assignments', label: 'Assignments', icon: '📝' },
+  ];
 
   return (
     <aside
@@ -52,44 +87,98 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ currentRoute, onRouteCha
     >
       <div style={{ padding: '24px 20px', borderBottom: `1px solid ${isAdmin ? 'var(--admin-border)' : 'var(--learn-border)'}` }}>
         <h2 style={{ fontSize: '16px', fontWeight: 700, color: isAdmin ? 'var(--admin-text)' : 'var(--learn-text)' }}>
-          {isAdmin ? 'Admin Console' : (isReadOnly ? 'Observer Portal' : 'Student Learning')}
+          {isAdmin
+            ? 'Admin Console'
+            : (isParent
+              ? 'Parent Portal'
+              : (isTeacher ? 'Teacher Portal' : 'Student Learning'))}
         </h2>
         <p style={{ fontSize: '12px', color: isAdmin ? 'var(--admin-text-secondary)' : 'var(--learn-text-secondary)', marginTop: '4px' }}>
-          {isAdmin ? 'Governance & Review' : (isReadOnly ? 'Read-Only Dashboard' : 'Modular Concept Videos')}
+          {isAdmin
+            ? 'Governance & Academic Structure'
+            : (isParent
+              ? "My Child's Learning"
+              : (isTeacher ? 'My Students & Class Performance' : 'Modular Concept Videos'))}
         </p>
       </div>
 
-      <nav style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-        {items.map((item) => {
-          const isActive = currentRoute === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => onRouteChange(item.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                width: '100%',
-                padding: '10px 14px',
-                borderRadius: '8px',
-                border: 'none',
-                textAlign: 'left',
-                fontSize: '13px',
-                fontWeight: isActive ? 600 : 500,
-                backgroundColor: isActive
-                  ? (isAdmin ? 'rgba(99, 102, 241, 0.15)' : 'rgba(37, 99, 235, 0.1)')
-                  : 'transparent',
-                color: isActive
-                  ? (isAdmin ? 'var(--admin-primary)' : 'var(--learn-primary)')
-                  : (isAdmin ? 'var(--admin-text-secondary)' : 'var(--learn-text-secondary)'),
-                cursor: 'pointer',
-                transition: 'all 150ms ease',
-              }}
-            >
-              {item.label}
-            </button>
-          );
-        })}
+      <nav style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, overflowY: 'auto' }}>
+        {isAdmin ? (
+          adminNavGroups.map((group, gIdx) => (
+            <div key={gIdx} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {group.title && (
+                <div
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: 'var(--admin-text-secondary)',
+                    padding: '6px 10px 4px 10px',
+                  }}
+                >
+                  {group.title}
+                </div>
+              )}
+              {group.items.map((item) => {
+                const isActive = currentRoute === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onRouteChange(item.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      textAlign: 'left',
+                      fontSize: '13px',
+                      fontWeight: isActive ? 600 : 500,
+                      backgroundColor: isActive ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                      color: isActive ? 'var(--admin-primary)' : 'var(--admin-text-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 120ms ease',
+                    }}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))
+        ) : (
+          (isParent ? parentNavItems : (isTeacher ? teacherNavItems : studentNavItems)).map((item) => {
+            const isActive = currentRoute === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => onRouteChange(item.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  textAlign: 'left',
+                  fontSize: '13px',
+                  fontWeight: isActive ? 600 : 500,
+                  backgroundColor: isActive ? 'rgba(37, 99, 235, 0.1)' : 'transparent',
+                  color: isActive ? 'var(--learn-primary)' : 'var(--learn-text-secondary)',
+                  cursor: 'pointer',
+                }}
+              >
+                {item.icon && <span>{item.icon}</span>}
+                <span>{item.label}</span>
+              </button>
+            );
+          })
+        )}
       </nav>
 
       {/* Role Notice at Bottom */}
@@ -105,8 +194,9 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ currentRoute, onRouteCha
         }}
       >
         {isAdmin && 'Enforcing Stage 1-5 Approval Gate before student publication.'}
-        {!isAdmin && !isReadOnly && 'Pre-rendered ~5-6 min videos & adaptive quizzes.'}
-        {isReadOnly && 'Read-only access strictly restricted to summary metrics.'}
+        {isParent && 'Dedicated parent monitoring: strictly linked child progress only.'}
+        {isTeacher && 'Class analytics restricted to assigned students.'}
+        {!isAdmin && !isParent && !isTeacher && 'Pre-rendered ~5-6 min videos & adaptive quizzes.'}
       </div>
     </aside>
   );

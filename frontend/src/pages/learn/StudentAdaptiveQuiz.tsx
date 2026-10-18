@@ -5,10 +5,11 @@ import { api } from '../../lib/api';
 import { AdaptiveQuiz } from '../../lib/types';
 
 interface StudentAdaptiveQuizProps {
-  onNavigate: (route: string) => void;
+  onNavigate: (route: string, params?: any) => void;
+  topicId?: number;
 }
 
-export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavigate }) => {
+export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavigate, topicId }) => {
   const [adaptiveQuiz, setAdaptiveQuiz] = useState<AdaptiveQuiz | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
@@ -20,7 +21,12 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
     const fetchAdaptive = async () => {
       try {
         setLoading(true);
-        const data = await api.getAdaptiveQuiz(1);
+        let targetTopicId = topicId;
+        if (!targetTopicId) {
+          const summary = await api.getProgressSummary();
+          targetTopicId = summary.resume_learning?.topic_id || summary.quizzes?.[0]?.topic_id;
+        }
+        const data = await api.getAdaptiveQuiz(targetTopicId);
         setAdaptiveQuiz(data);
       } catch (err: any) {
         setError(err.message || 'Adaptive quiz session could not be retrieved.');
@@ -29,7 +35,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
       }
     };
     fetchAdaptive();
-  }, []);
+  }, [topicId]);
 
   const handleSelect = (qId: number, letter: string) => {
     setSelectedAnswers((prev) => ({ ...prev, [String(qId)]: letter }));

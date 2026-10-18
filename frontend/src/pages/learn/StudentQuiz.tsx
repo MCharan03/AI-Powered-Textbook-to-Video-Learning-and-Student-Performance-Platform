@@ -3,32 +3,52 @@ import { SurfacePanel } from '../../components/SurfacePanel';
 import { QuizOptionCard } from '../../components/QuizOptionCard';
 import { ScoreSummaryCard } from '../../components/ScoreSummaryCard';
 import { api } from '../../lib/api';
-import { TopicQuiz, QuizSubmissionResult } from '../../lib/types';
+import { TopicQuiz, QuizSubmissionResult, QuestionResultItem } from '../../lib/types';
 
 interface StudentQuizProps {
-  onNavigate: (route: string) => void;
+  onNavigate: (route: string, params?: any) => void;
+  quizId?: number;
+  topicId?: number;
 }
 
-export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate }) => {
+export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, topicId }) => {
   const [quiz, setQuiz] = useState<TopicQuiz | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<QuizSubmissionResult | null>(null);
+  const [detailedBreakdown, setDetailedBreakdown] = useState<QuestionResultItem[]>([]);
+  const [recommendation, setRecommendation] = useState<string>('');
+  const [adaptiveRecommended, setAdaptiveRecommended] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchQuiz = async () => {
       try {
-        // Fetch published quiz for topic 1
-        const data = await api.getTopicQuiz(1);
+        setError(null);
+        let data: TopicQuiz | null = null;
+        if (quizId) {
+          data = await api.getQuiz(quizId);
+        } else if (topicId) {
+          data = await api.getTopicQuiz(topicId);
+        } else {
+          // Resolve from student progress summary quizzes
+          const summary = await api.getProgressSummary();
+          const firstQuiz = summary.quizzes?.[0];
+          if (firstQuiz) {
+            data = await api.getQuiz(firstQuiz.item_id);
+          } else {
+            setError('No published quizzes are available for your assigned curriculum.');
+            return;
+          }
+        }
         setQuiz(data);
       } catch (err: any) {
         setError(err.message || 'No approved quiz found for this topic.');
       }
     };
     fetchQuiz();
-  }, []);
+  }, [quizId, topicId]);
 
   const handleSelectOption = (questionId: number, optionLetter: string) => {
     setSelectedAnswers((prev) => ({
@@ -45,8 +65,19 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate }) => {
       for (const [qId, letter] of Object.entries(selectedAnswers)) {
         numericAnswers[qId] = letter.charCodeAt(0) - 65;
       }
-      const res = await api.submitQuizAttempt(quiz.id, numericAnswers);
-      setResult(res);
+      const res: any = await api.submitDetailedQuizAttempt(quiz.id, numericAnswers);
+      const adaptedResult: QuizSubmissionResult = {
+        attempt_id: res.attempt_id || res.id,
+        score_percentage: res.percentage !== undefined ? res.percentage : (res.score || 0),
+        passed: res.passed,
+        mastery_threshold: res.passing_score || 80,
+        weak_concepts: res.weak_concepts || [],
+        message: res.recommendation || ''
+      };
+      setResult(adaptedResult);
+      setDetailedBreakdown(res.question_results || []);
+      setRecommendation(res.recommendation || '');
+      setAdaptiveRecommended(res.adaptive_recommended || !res.passed);
     } catch (err: any) {
       alert(`Submission failed: ${err.message}`);
     } finally {
@@ -58,6 +89,7 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate }) => {
     setSelectedAnswers({});
     setCurrentIdx(0);
     setResult(null);
+    setDetailedBreakdown([]);
   };
 
   if (error) {
@@ -66,9 +98,24 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate }) => {
         <div style={{ textAlign: 'center', padding: '32px 16px' }}>
           <div style={{ fontSize: '32px', color: '#EF4444' }}>🔒</div>
           <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', marginTop: '12px' }}>
-            Quiz Pending Administrator Approval
+            Quiz Content Unavailable
           </h2>
           <p style={{ fontSize: '14px', color: '#64748B', marginTop: '6px' }}>{error}</p>
+          <button
+            onClick={() => onNavigate('student-dashboard')}
+            style={{
+              marginTop: '16px',
+              padding: '8px 18px',
+              backgroundColor: '#2563EB',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            ← Back to Learning Dashboard
+          </button>
         </div>
       </SurfacePanel>
     );
@@ -76,7 +123,7 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate }) => {
 
   if (result) {
     return (
-      <div style={{ maxWidth: '640px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ maxWidth: '720px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0F172A', textAlign: 'center' }}>
           Quiz Assessment Results
         </h1>
@@ -85,6 +132,59 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate }) => {
           onRetry={handleRetry}
           onStartAdaptive={() => onNavigate('student-adaptive')}
         />
+
+        {recommendation && (
+          <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#EEF2FF', border: '1px solid #C7D2FE', color: '#3730A3', fontSize: '14px' }}>
+            <strong>💡 Recommendation: </strong> {recommendation}
+          </div>
+        )}
+
+        {/* Detailed Question Review Breakdown */}
+        {detailedBreakdown.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1E293B' }}>Question Breakdown & Explanations</h2>
+            {detailedBreakdown.map((qr, qidx) => (
+              <div
+                key={qr.question_id || qidx}
+                style={{
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  backgroundColor: qr.is_correct ? '#F0FDF4' : '#FEF2F2',
+                  border: `1px solid ${qr.is_correct ? '#BBF7D0' : '#FECACA'}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 600, fontSize: '14px', color: '#0F172A' }}>
+                    Q{qidx + 1}. {qr.question_text}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      backgroundColor: qr.is_correct ? '#16A34A' : '#DC2626',
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    {qr.is_correct ? 'CORRECT' : 'INCORRECT'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '13px', color: '#475569' }}>
+                  Your Answer: <strong style={{ color: qr.is_correct ? '#16A34A' : '#DC2626' }}>{String(qr.selected_answer)}</strong> • Correct Answer: <strong style={{ color: '#16A34A' }}>{String(qr.correct_answer)}</strong>
+                </div>
+                {qr.explanation && (
+                  <div style={{ fontSize: '12px', color: '#334155', backgroundColor: 'rgba(255,255,255,0.7)', padding: '10px 12px', borderRadius: '8px', marginTop: '4px' }}>
+                    <strong>Explanation:</strong> {qr.explanation}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

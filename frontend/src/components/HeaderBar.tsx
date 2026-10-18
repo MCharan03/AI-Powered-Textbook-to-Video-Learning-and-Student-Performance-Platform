@@ -7,9 +7,9 @@ interface HeaderBarProps {
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({ breadcrumbs }) => {
-  const { user, logout, quickSwitch } = useAuth();
+  const { user, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const domain = isAdmin ? 'admin.example.com' : 'learn.example.com';
+  const domain = isAdmin ? 'admin.veyoralabs.net' : 'learn.veyoralabs.net';
 
   return (
     <header
@@ -53,36 +53,15 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({ breadcrumbs }) => {
         </div>
       </div>
 
-      {/* Right: Quick Role Switcher & User Profile */}
+      {/* Right: User Profile & Logout */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '12px', color: isAdmin ? 'var(--admin-text-secondary)' : 'var(--learn-text-secondary)' }}>Switch Role:</span>
-          {(['admin', 'student', 'teacher', 'parent'] as UserRole[]).map((r) => (
-            <button
-              key={r}
-              onClick={() => quickSwitch(r)}
-              style={{
-                padding: '4px 8px',
-                fontSize: '11px',
-                borderRadius: '4px',
-                border: user?.role === r ? '1px solid transparent' : `1px solid ${isAdmin ? 'var(--admin-border)' : 'var(--learn-border)'}`,
-                backgroundColor: user?.role === r ? (isAdmin ? 'var(--admin-primary)' : 'var(--learn-primary)') : 'transparent',
-                color: user?.role === r ? '#FFF' : (isAdmin ? 'var(--admin-text-secondary)' : 'var(--learn-text-secondary)'),
-                cursor: 'pointer',
-                fontWeight: user?.role === r ? 600 : 400,
-                textTransform: 'capitalize',
-              }}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-
         {user && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: `1px solid ${isAdmin ? 'var(--admin-border)' : 'var(--learn-border)'}`, paddingLeft: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '13px', fontWeight: 600, color: isAdmin ? 'var(--admin-text)' : 'var(--learn-text)' }}>{user.name}</div>
-              <div style={{ fontSize: '11px', color: isAdmin ? 'var(--admin-text-secondary)' : 'var(--learn-text-secondary)', textTransform: 'capitalize' }}>{user.role}</div>
+              <div style={{ fontSize: '11px', color: isAdmin ? 'var(--admin-text-secondary)' : 'var(--learn-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {user.role}
+              </div>
             </div>
             <button
               onClick={logout}
@@ -96,7 +75,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({ breadcrumbs }) => {
                 cursor: 'pointer',
               }}
             >
-              Logout
+              Sign Out
             </button>
           </div>
         )}
@@ -104,3 +83,4 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({ breadcrumbs }) => {
     </header>
   );
 };
+
