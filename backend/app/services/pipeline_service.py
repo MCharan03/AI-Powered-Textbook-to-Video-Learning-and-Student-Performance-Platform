@@ -388,25 +388,39 @@ def extract_pdf_pages(file_path: Optional[str], default_title: str = "Textbook")
     """
     pages: List[Dict[str, Any]] = []
 
-    if file_path and os.path.exists(file_path):
-        try:
-            import pymupdf as fitz
-            doc = fitz.open(file_path)
-            for page_num in range(len(doc)):
-                page = doc.load_page(page_num)
-                text = page.get_text() or ""
-                pages.append({"page_number": page_num + 1, "text": text.strip()})
-            doc.close()
-        except Exception:
+    if file_path:
+        resolved_path = file_path
+        if not os.path.exists(resolved_path):
+            base_candidates = [
+                os.getcwd(),
+                os.path.join(os.path.dirname(__file__), "..", ".."),
+                os.path.join(os.path.dirname(__file__), "..", "..", "uploads"),
+            ]
+            for base in base_candidates:
+                cand = os.path.join(base, os.path.basename(file_path))
+                if os.path.exists(cand):
+                    resolved_path = cand
+                    break
+
+        if os.path.exists(resolved_path):
             try:
-                import pypdfium2 as pdfium
-                pdf = pdfium.PdfDocument(file_path)
-                for idx, page in enumerate(pdf):
-                    textpage = page.get_textpage()
-                    text = textpage.get_text_range() or ""
-                    pages.append({"page_number": idx + 1, "text": text.strip()})
+                import pymupdf as fitz
+                doc = fitz.open(resolved_path)
+                for page_num in range(len(doc)):
+                    page = doc.load_page(page_num)
+                    text = page.get_text() or ""
+                    pages.append({"page_number": page_num + 1, "text": text.strip()})
+                doc.close()
             except Exception:
-                pass
+                try:
+                    import pypdfium2 as pdfium
+                    pdf = pdfium.PdfDocument(resolved_path)
+                    for idx, page in enumerate(pdf):
+                        textpage = page.get_textpage()
+                        text = textpage.get_text_range() or ""
+                        pages.append({"page_number": idx + 1, "text": text.strip()})
+                except Exception:
+                    pass
 
     if not pages or all(len(p.get("text", "")) == 0 for p in pages):
         # Fallback structured mock pages with clear chapters and topics for testing
@@ -597,18 +611,19 @@ def run_textbook_ingestion_pipeline(db: Session, textbook_id: int, job_id: Optio
         created_top_extracts: List[TopicExtract] = []
 
         for ch_ext in created_ch_extracts:
-            # Extract chapter text chunk from source page slice
-            ch_pages = [
-                p["text"] for p in pages
+            # Extract chapter text chunk and page objects from source page slice
+            ch_pages_slice = [
+                p for p in pages
                 if (ch_ext.source_start_page or 1) <= p.get("page_number", 1) <= (ch_ext.source_end_page or len(pages))
             ]
-            ch_text = "\n".join(ch_pages)
+            ch_text = "\n".join([p.get("text", "") for p in ch_pages_slice])
 
             raw_topics = extractor.extract_topics(
                 chapter_title=ch_ext.title,
                 chapter_text=ch_text,
                 start_page=ch_ext.source_start_page or 1,
-                end_page=ch_ext.source_end_page or len(pages)
+                end_page=ch_ext.source_end_page or len(pages),
+                pages=ch_pages_slice
             )
 
             for t_data in raw_topics:
@@ -631,18 +646,19 @@ def run_textbook_ingestion_pipeline(db: Session, textbook_id: int, job_id: Optio
         # ==============================================================================
         update_stage("SUBTOPIC_EXTRACTION", 80.0, 5)
         for top_ext in created_top_extracts:
-            # Get topic text slice
-            top_pages = [
-                p["text"] for p in pages
+            # Get topic text slice and page objects
+            top_pages_slice = [
+                p for p in pages
                 if (top_ext.source_start_page or 1) <= p.get("page_number", 1) <= (top_ext.source_end_page or len(pages))
             ]
-            top_text = "\n".join(top_pages)
+            top_text = "\n".join([p.get("text", "") for p in top_pages_slice])
 
             raw_subtopics = extractor.extract_subtopics(
                 topic_title=top_ext.title,
                 topic_text=top_text,
                 start_page=top_ext.source_start_page or 1,
-                end_page=top_ext.source_end_page or len(pages)
+                end_page=top_ext.source_end_page or len(pages),
+                pages=top_pages_slice
             )
 
             for s_data in raw_subtopics:
@@ -800,30 +816,32 @@ def regenerate_textbook_curriculum(db: Session, textbook_id: int, target: str = 
     draft_curriculum = []
 
     for c_idx, ch_data in enumerate(raw_chapters):
-        ch_pages = [
-            p["text"] for p in pages
+        ch_pages_slice = [
+            p for p in pages
             if ch_data.get("source_start_page", 1) <= p.get("page_number", 1) <= ch_data.get("source_end_page", len(pages))
         ]
-        ch_text = "\n".join(ch_pages)
+        ch_text = "\n".join([p.get("text", "") for p in ch_pages_slice])
         raw_topics = extractor.extract_topics(
             ch_data["title"],
             ch_text,
             ch_data.get("source_start_page", 1),
-            ch_data.get("source_end_page", len(pages))
+            ch_data.get("source_end_page", len(pages)),
+            pages=ch_pages_slice
         )
 
         topics_draft = []
         for t_idx, t_data in enumerate(raw_topics):
-            top_pages = [
-                p["text"] for p in pages
+            top_pages_slice = [
+                p for p in pages
                 if t_data.get("source_start_page", 1) <= p.get("page_number", 1) <= t_data.get("source_end_page", len(pages))
             ]
-            top_text = "\n".join(top_pages)
+            top_text = "\n".join([p.get("text", "") for p in top_pages_slice])
             raw_subtopics = extractor.extract_subtopics(
                 t_data["title"],
                 top_text,
                 t_data.get("source_start_page", 1),
-                t_data.get("source_end_page", len(pages))
+                t_data.get("source_end_page", len(pages)),
+                pages=top_pages_slice
             )
             topics_draft.append({
                 "sequence_number": t_data["sequence_number"],
