@@ -9,7 +9,7 @@ from app.models.models import (
     ProcessingJob, Role, VideoStatus, MasteryLevel, QuestionType
 )
 from app.core.security import hash_pw, create_token, verify_pw
-from conftest import make_auth_header
+from tests.conftest import make_auth_header
 
 
 # ============================================================================

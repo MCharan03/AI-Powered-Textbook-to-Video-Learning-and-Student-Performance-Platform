@@ -25,6 +25,7 @@ import { AdminVideoPlans } from './pages/admin/AdminVideoPlans';
 import { AdminScriptReview } from './pages/admin/AdminScriptReview';
 import { AdminVideoReview } from './pages/admin/AdminVideoReview';
 import { AdminQuizzes } from './pages/admin/AdminQuizzes';
+import { AdminVideoStudio } from './pages/admin/AdminVideoStudio';
 
 // Learning views
 import { StudentDashboard } from './pages/learn/StudentDashboard';
@@ -217,6 +218,9 @@ const MainLayout: React.FC = () => {
       case 'admin-quizzes':
         current = 'Interactive Quiz Generation & Review';
         break;
+      case 'admin-video-studio':
+        current = '⚡ Video Creation Studio';
+        break;
       case 'admin-pipeline':
         current = 'AI Pipeline Monitor';
         break;
@@ -307,6 +311,10 @@ const MainLayout: React.FC = () => {
       // Admin Portal - BUILD 07 Interactive Quiz Review
       case 'admin-quizzes':
         return <AdminQuizzes />;
+
+      // Admin Portal - Consolidated One-Flow Video Studio
+      case 'admin-video-studio':
+        return <AdminVideoStudio onNavigate={handleNavigate} initialTextbookId={routeParams.textbookId} />;
 
       // Admin Portal - Pipeline, Review, Settings
       case 'admin-pipeline':

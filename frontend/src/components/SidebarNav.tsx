@@ -43,6 +43,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ currentRoute, onRouteCha
     {
       title: 'Pipeline & Content',
       items: [
+        { id: 'admin-video-studio', label: '⚡ Video Studio (One-Flow)', icon: '🚀' },
         { id: 'admin-textbooks', label: 'Textbooks & Ingestion', icon: '📖' },
         { id: 'admin-video-plans', label: 'Video Plans', icon: '🎬' },
         { id: 'admin-script-review', label: 'Script Review', icon: '📝' },

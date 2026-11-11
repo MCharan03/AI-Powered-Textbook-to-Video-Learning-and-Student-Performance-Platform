@@ -160,26 +160,47 @@ export const AdminTextbooks: React.FC<AdminTextbooksProps> = ({ onNavigate }) =>
           </p>
         </div>
 
-        <button
-          onClick={() => setShowUploadModal(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            backgroundColor: 'var(--admin-primary)',
-            color: '#FFFFFF',
-            border: 'none',
-            borderRadius: '8px',
-            padding: '10px 18px',
-            fontSize: '14px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          }}
-        >
-          <span>➕</span>
-          <span>Upload New Textbook</span>
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={() => onNavigate('admin-video-studio')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              backgroundColor: 'rgba(99, 102, 241, 0.15)',
+              color: '#818CF8',
+              border: '1px solid rgba(99, 102, 241, 0.4)',
+              borderRadius: '8px',
+              padding: '10px 18px',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <span>⚡</span>
+            <span>Video Studio (One-Flow)</span>
+          </button>
+          <button
+            onClick={() => setShowUploadModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              backgroundColor: 'var(--admin-primary)',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '10px 18px',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+            }}
+          >
+            <span>➕</span>
+            <span>Upload New Textbook</span>
+          </button>
+        </div>
       </div>
 
       {/* Metrics Row */}
@@ -483,6 +504,21 @@ export const AdminTextbooks: React.FC<AdminTextbooksProps> = ({ onNavigate }) =>
                               Review Curriculum →
                             </button>
                           )}
+                          <button
+                            onClick={() => onNavigate('admin-video-studio', { textbookId: tb.id })}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                              border: '1px solid rgba(99, 102, 241, 0.3)',
+                              color: '#818CF8',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            ⚡ Studio →
+                          </button>
                         </div>
                       </td>
                     </tr>

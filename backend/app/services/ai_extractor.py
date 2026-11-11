@@ -78,18 +78,29 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
         sections = []
         subsections = []
 
+        has_toc = any("contents" in p.get("text", "")[:300].lower() or "...." in p.get("text", "") for p in pages[:2])
+        start_body_page = 2 if has_toc else 1
+
+        sec_pat = re.compile(r"^(?:topic|section)?\s*(\d+)\.(\d+)[\s:\-\.]+(.+)$", re.IGNORECASE)
+        sub_pat = re.compile(r"^(?:subtopic|subsection)?\s*(\d+)\.(\d+)\.(\d+)[\s:\-\.]+(.+)$", re.IGNORECASE)
+
         for p in pages:
             p_num = p.get("page_number", 1)
+            is_toc = has_toc and p_num < start_body_page
             lines = [l.strip() for l in p.get("text", "").split("\n") if l.strip()]
-            for line in lines:
+            for idx, line in enumerate(lines):
                 if _is_non_heading(line):
                     continue
 
                 # Subsection: e.g. 7.1.1 When is work done equal to zero?
-                m_sub = re.match(r"^(?:subtopic|subsection)?\s*(\d+)\.(\d+)\.(\d+)[\s:\-\.]+(.+)$", line, re.IGNORECASE)
+                m_sub = sub_pat.match(line)
                 if m_sub:
-                    c_num, s_num, sub_num, title = int(m_sub.group(1)), int(m_sub.group(2)), int(m_sub.group(3)), m_sub.group(4).strip()
-                    if c_num < 100 and s_num < 50 and sub_num < 50 and len(title) > 1 and re.match(r"^[A-Za-z]", title):
+                    c_num, s_num, sub_num = int(m_sub.group(1)), int(m_sub.group(2)), int(m_sub.group(3))
+                    title = m_sub.group(4).strip().rstrip(":")
+                    if (c_num < 100 and s_num < 50 and sub_num < 50 and 1 < len(title) < 80 
+                            and "=" not in title and "[" not in title and re.match(r"^[A-Za-z]", title)):
+                        ctx_lines = [l for l in lines[idx+1:idx+6] if not _is_non_heading(l) and not sub_pat.match(l) and not sec_pat.match(l)]
+                        ctx_snippet = " ".join(ctx_lines)[:250]
                         subsections.append({
                             "chapter_num": c_num,
                             "section_num": s_num,
@@ -97,30 +108,59 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
                             "num_str": f"{c_num}.{s_num}.{sub_num}",
                             "title": title,
                             "page": p_num,
-                            "raw": line
+                            "raw": line,
+                            "is_toc": is_toc,
+                            "description": ctx_snippet or f"Granular study of {title}"
                         })
                     continue
 
                 # Section: e.g. 7.1 Work Done by a Constant Force
-                m_sec = re.match(r"^(?:topic|section)?\s*(\d+)\.(\d+)[\s:\-\.]+(.+)$", line, re.IGNORECASE)
+                m_sec = sec_pat.match(line)
                 if m_sec:
-                    c_num, s_num, title = int(m_sec.group(1)), int(m_sec.group(2)), m_sec.group(3).strip()
-                    if c_num < 100 and s_num < 50 and len(title) > 2 and re.match(r"^[A-Za-z]", title):
-                        if not any(unit in title for unit in ["km h", "km/h", "m/s", "m s–", "N m"]):
+                    c_num, s_num = int(m_sec.group(1)), int(m_sec.group(2))
+                    title = m_sec.group(3).strip().rstrip(":")
+                    if (c_num < 100 and s_num < 50 and 2 < len(title) < 80 
+                            and "=" not in title and "[" not in title and re.match(r"^[A-Za-z]", title)):
+                        if not any(unit in title.lower() for unit in ["km h", "km/h", "m/s", "m s–", "n m"]):
+                            ctx_lines = [l for l in lines[idx+1:idx+6] if not _is_non_heading(l) and not sub_pat.match(l) and not sec_pat.match(l)]
+                            ctx_snippet = " ".join(ctx_lines)[:250]
                             sections.append({
                                 "chapter_num": c_num,
                                 "section_num": s_num,
                                 "num_str": f"{c_num}.{s_num}",
                                 "title": title,
                                 "page": p_num,
-                                "raw": line
+                                "raw": line,
+                                "is_toc": is_toc,
+                                "description": ctx_snippet or f"Core study module focusing on {title}"
                             })
 
-        return sections, subsections
+        return sections, subsections, has_toc
 
     def extract_chapters(self, pages: List[Dict[str, Any]], textbook_title: str) -> List[Dict[str, Any]]:
         total_pages = max([p.get("page_number", 1) for p in pages], default=1) if pages else 1
-        sections, _ = self._scan_structural_elements(pages)
+        all_sections, _, has_toc = self._scan_structural_elements(pages)
+        sections = [s for s in all_sections if not s.get("is_toc")] or all_sections
+
+        # Detect explicit module/chapter/unit title definitions in pages e.g. "Module-1: Introduction"
+        explicit_modules: Dict[int, str] = {}
+        mod_pat = re.compile(r"(?i)^(?:module|unit|chapter)\s*[-:]?\s*(\d+)[\s:\-\.]+([^\n\r]+)", re.MULTILINE)
+        for p in pages:
+            for match in mod_pat.finditer(p.get("text", "")):
+                m_num = int(match.group(1))
+                m_tit = match.group(2).strip().rstrip(":")
+                m_tit = re.sub(r"\s+", " ", m_tit).strip()
+                if len(m_tit) > 2 and m_num not in explicit_modules:
+                    explicit_modules[m_num] = m_tit
+
+        # Also detect numbered chapter lines in Table of Contents or opener e.g. "1. Introduction"
+        toc_pat = re.compile(r"^\s*(\d+)[\.\s:\-]+([A-Za-z][^\n\r]+)$", re.MULTILINE)
+        if has_toc and pages:
+            for match in toc_pat.finditer(pages[0].get("text", "")):
+                t_num = int(match.group(1))
+                t_tit = match.group(2).strip().rstrip(":")
+                if len(t_tit) > 2 and t_num not in explicit_modules and not _is_non_heading(t_tit):
+                    explicit_modules[t_num] = t_tit
 
         # Count section occurrences per chapter number
         ch_counts: Dict[int, int] = {}
@@ -147,28 +187,29 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
                 else:
                     ch_end = max(ch_start, total_pages)
 
-                # Detect chapter title
-                ch_title = None
+                # Detect chapter title: Priority 1 = explicit module/unit from document
+                ch_title = explicit_modules.get(ch_num)
 
-                # Look on pages leading up to first section for opener (e.g. lines before 'Chapter \n <ch_num>')
-                first_sec_page = ch_secs[0]["page"] if ch_secs else ch_start
-                for check_p in range(ch_start, min(len(pages), first_sec_page) + 1):
-                    p_lines = [l.strip() for l in pages[check_p - 1].get("text", "").split("\n") if l.strip()]
-                    for idx, l in enumerate(p_lines):
-                        if re.match(r"(?i)^chapter$", l) and idx + 1 < len(p_lines) and p_lines[idx + 1] == str(ch_num):
-                            candidate_title = " ".join(p_lines[:idx]).strip()
-                            if candidate_title and len(candidate_title) > 2:
-                                ch_title = candidate_title
-                                break
-                        elif re.match(r"(?i)^chapter\s*" + str(ch_num) + r"$", l):
-                            candidate_title = " ".join(p_lines[:idx]).strip()
-                            if candidate_title and len(candidate_title) > 2:
-                                ch_title = candidate_title
-                                break
-                    if ch_title:
-                        break
+                # Priority 2 = Look on pages leading up to first section for opener
+                if not ch_title:
+                    first_sec_page = ch_secs[0]["page"] if ch_secs else ch_start
+                    for check_p in range(ch_start, min(len(pages), first_sec_page) + 1):
+                        p_lines = [l.strip() for l in pages[check_p - 1].get("text", "").split("\n") if l.strip()]
+                        for idx, l in enumerate(p_lines):
+                            if re.match(r"(?i)^chapter$", l) and idx + 1 < len(p_lines) and p_lines[idx + 1] == str(ch_num):
+                                candidate_title = " ".join(p_lines[:idx]).strip()
+                                if candidate_title and len(candidate_title) > 2:
+                                    ch_title = candidate_title
+                                    break
+                            elif re.match(r"(?i)^chapter\s*" + str(ch_num) + r"$", l):
+                                candidate_title = " ".join(p_lines[:idx]).strip()
+                                if candidate_title and len(candidate_title) > 2:
+                                    ch_title = candidate_title
+                                    break
+                        if ch_title:
+                            break
 
-                # Check running headers on subsequent pages (filter out series/grade headers like 'Exploration|Grade 9')
+                # Priority 3 = Running headers
                 if not ch_title:
                     headers: Dict[str, int] = {}
                     for p in pages[ch_start:]:
@@ -190,8 +231,8 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
 
                 chapters.append({
                     "chapter_number": ch_num,
-                    "title": f"Chapter {ch_num} — {ch_title}",
-                    "description": f"Comprehensive chapter on {ch_title}",
+                    "title": f"Chapter {ch_num} — {ch_title}" if not ch_title.lower().startswith("chapter") else ch_title,
+                    "description": f"Comprehensive study covering {ch_title}",
                     "source_start_page": ch_start,
                     "source_end_page": ch_end,
                     "confidence_score": 0.98
@@ -295,7 +336,8 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
         # 1. Structural extraction from page blocks if available
         topics: List[Dict[str, Any]] = []
         if page_list:
-            raw_sections, _ = self._scan_structural_elements(page_list)
+            all_sections, _, _ = self._scan_structural_elements(page_list)
+            raw_sections = [s for s in all_sections if not s.get("is_toc")] or all_sections
             if expected_ch_num is not None:
                 ch_secs = [s for s in raw_sections if s["chapter_num"] == expected_ch_num]
             else:
@@ -314,7 +356,7 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
                     topics.append({
                         "sequence_number": idx + 1,
                         "title": topic_title,
-                        "description": f"Core study module focusing on {s['title']}",
+                        "description": s.get("description") or f"Core study module focusing on {s['title']}",
                         "source_start_page": t_start,
                         "source_end_page": max(t_start, t_end),
                         "confidence_score": 0.95
@@ -384,7 +426,8 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
         s_num = int(sec_match.group(2)) if sec_match else None
 
         if page_list:
-            _, raw_subs = self._scan_structural_elements(page_list)
+            _, all_subs, _ = self._scan_structural_elements(page_list)
+            raw_subs = [s for s in all_subs if not s.get("is_toc")] or all_subs
             if c_num is not None and s_num is not None:
                 matching_subs = [s for s in raw_subs if s["chapter_num"] == c_num and s["section_num"] == s_num]
             else:
@@ -402,7 +445,7 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
                     subtopics.append({
                         "sequence_number": idx + 1,
                         "title": sub["title"],
-                        "description": f"Granular concept: {sub['title']}",
+                        "description": sub.get("description") or f"Granular concept: {sub['title']}",
                         "source_start_page": sub_start,
                         "source_end_page": max(sub_start, sub_end),
                         "confidence_score": 0.95

@@ -60,43 +60,16 @@ def run_stages_1_to_5(db: Session, textbook_id: int):
 
     try:
         # ---- STAGE 1: PDF Ingestion & OCR / Text Extraction ----
-        text_content = ""
         storage = get_storage()
         file_path = storage.get_local_path(textbook.storage_key) if textbook.storage_key else textbook.file_path
+        if not file_path or not os.path.exists(file_path):
+            uploads_dir = os.path.join(os.path.dirname(__file__), "..", "..", "uploads")
+            if textbook.storage_key:
+                candidate = os.path.join(uploads_dir, os.path.basename(textbook.storage_key))
+                if os.path.exists(candidate):
+                    file_path = candidate
 
-        if file_path and os.path.exists(file_path):
-            extraction_errors = []
-            try:
-                import pymupdf as fitz
-                doc = fitz.open(file_path)
-                pages_text = [page.get_text() for page in doc]
-                text_content = "\n".join(pages_text).strip()
-                doc.close()
-            except Exception as e:
-                extraction_errors.append(f"PyMuPDF error: {str(e)}")
-
-            if not text_content:
-                try:
-                    import pypdfium2 as pdfium
-                    pdf = pdfium.PdfDocument(file_path)
-                    pages_text = []
-                    for page in pdf:
-                        textpage = page.get_textpage()
-                        pages_text.append(textpage.get_text_range())
-                    text_content = "\n".join(pages_text).strip()
-                except Exception as e:
-                    extraction_errors.append(f"pypdfium2 error: {str(e)}")
-
-        if not text_content:
-            text_content = (
-                f"Chapter 1: Foundations of {textbook.title}\n"
-                f"Topic 1.1: Core Concepts and Principles\n"
-                f"Content explaining the fundamental principles.\n"
-                f"Topic 1.2: Advanced Techniques and Modeling\n"
-                f"Chapter 2: Applied Systems in {textbook.title}\n"
-                f"Topic 2.1: Practical Implementation and Analysis"
-            )
-
+        pages = extract_pdf_pages(file_path, default_title=textbook.title)
         log_stage(1, "PDF Ingestion & OCR")
 
         # ---- STAGE 2: Hierarchical Extraction ----
@@ -115,56 +88,92 @@ def run_stages_1_to_5(db: Session, textbook_id: int):
                 subject_id = subject.id
             textbook.subject_id = subject_id
 
-        # Clear existing textbook hierarchy if re-running
-        db.query(Chapter).filter(Chapter.textbook_id == textbook.id).delete()
+        # Clear existing textbook hierarchy and topics if re-running
+        old_chapters = db.query(Chapter).filter(Chapter.textbook_id == textbook.id).all()
+        old_ch_ids = [c.id for c in old_chapters]
+        if old_ch_ids:
+            old_topics = db.query(Topic).filter(Topic.chapter_id.in_(old_ch_ids)).all()
+            old_top_ids = [t.id for t in old_topics]
+            if old_top_ids:
+                db.query(Subtopic).filter(Subtopic.topic_id.in_(old_top_ids)).delete(synchronize_session=False)
+                db.query(Topic).filter(Topic.id.in_(old_top_ids)).delete(synchronize_session=False)
+            db.query(Chapter).filter(Chapter.id.in_(old_ch_ids)).delete(synchronize_session=False)
         db.commit()
+        db.expire_all()
 
-        # Parse chapters
-        chapter_matches = re.split(r"(?i)chapter\s+\d+[:\s\-]+", text_content)
-        ch_titles = re.findall(r"(?i)chapter\s+\d+[:\s\-]+([^\n]+)", text_content)
-
-        if not ch_titles:
-            ch_titles = [f"Introduction to {textbook.title}", f"Core Methods in {textbook.title}"]
-            ch_blocks = [text_content[:len(text_content)//2], text_content[len(text_content)//2:]]
-        else:
-            ch_blocks = chapter_matches[1:] if len(chapter_matches) > 1 else [text_content]
+        extractor = get_curriculum_extractor()
+        raw_chapters = extractor.extract_chapters(pages, textbook.title)
 
         created_topics = []
-        for c_idx, ch_title in enumerate(ch_titles):
-            ch_clean_title = ch_title.strip()[:200] or f"Chapter {c_idx+1}"
+        for c_idx, ch_data in enumerate(raw_chapters):
+            ch_clean_title = ch_data["title"].strip()[:200]
             chapter = Chapter(
                 subject_id=subject_id,
                 textbook_id=textbook.id,
-                chapter_number=c_idx + 1,
+                chapter_number=ch_data.get("chapter_number", c_idx + 1),
                 title=ch_clean_title,
-                description=f"Curriculum module covering {ch_clean_title}",
+                description=ch_data.get("description") or f"Curriculum module covering {ch_clean_title}",
+                source_start_page=ch_data.get("source_start_page", 1),
+                source_end_page=ch_data.get("source_end_page", len(pages)),
                 order_idx=c_idx + 1
             )
             db.add(chapter)
             db.flush()
 
-            raw_block = ch_blocks[c_idx] if c_idx < len(ch_blocks) else ""
-            topic_titles = re.findall(r"(?i)topic\s+[\d\.]+[:\s\-]+([^\n]+)", raw_block)
-            if not topic_titles:
-                topic_titles = [f"Fundamentals of {ch_clean_title}", f"Applied {ch_clean_title}"]
+            ch_pages_slice = [
+                p for p in pages
+                if (ch_data.get("source_start_page") or 1) <= p.get("page_number", 1) <= (ch_data.get("source_end_page") or len(pages))
+            ]
+            ch_text = "\n".join([p.get("text", "") for p in ch_pages_slice])
 
-            for t_idx, top_title in enumerate(topic_titles):
-                top_clean = top_title.strip()[:200] or f"Topic {t_idx+1}"
+            raw_topics = extractor.extract_topics(
+                chapter_title=chapter.title,
+                chapter_text=ch_text,
+                start_page=chapter.source_start_page or 1,
+                end_page=chapter.source_end_page or len(pages),
+                pages=ch_pages_slice
+            )
+
+            for t_idx, top_data in enumerate(raw_topics):
+                top_clean = top_data["title"].strip()[:200]
                 topic = Topic(
                     chapter_id=chapter.id,
                     title=top_clean,
-                    description=f"Detailed study of {top_clean}",
-                    sequence_number=t_idx + 1,
+                    description=top_data.get("description") or f"Detailed study of {top_clean}",
+                    source_start_page=top_data.get("source_start_page", chapter.source_start_page),
+                    source_end_page=top_data.get("source_end_page", chapter.source_end_page),
+                    sequence_number=top_data.get("sequence_number", t_idx + 1),
                     order_idx=t_idx + 1
                 )
                 db.add(topic)
                 db.flush()
                 created_topics.append(topic)
 
-                # Create subtopics
-                sub1 = Subtopic(topic_id=topic.id, title=f"Overview of {top_clean}", sequence_number=1, order_idx=1)
-                sub2 = Subtopic(topic_id=topic.id, title=f"Deep Dive: {top_clean}", sequence_number=2, order_idx=2)
-                db.add_all([sub1, sub2])
+                top_pages_slice = [
+                    p for p in ch_pages_slice
+                    if (topic.source_start_page or 1) <= p.get("page_number", 1) <= (topic.source_end_page or len(pages))
+                ]
+                top_text = "\n".join([p.get("text", "") for p in top_pages_slice])
+
+                raw_subs = extractor.extract_subtopics(
+                    topic_title=topic.title,
+                    topic_text=top_text,
+                    start_page=topic.source_start_page or 1,
+                    end_page=topic.source_end_page or len(pages),
+                    pages=top_pages_slice
+                )
+
+                for s_idx, sub_data in enumerate(raw_subs):
+                    sub = Subtopic(
+                        topic_id=topic.id,
+                        title=sub_data["title"].strip()[:200],
+                        description=sub_data.get("description") or f"Granular concept: {sub_data['title']}",
+                        source_start_page=sub_data.get("source_start_page", topic.source_start_page),
+                        source_end_page=sub_data.get("source_end_page", topic.source_end_page),
+                        sequence_number=sub_data.get("sequence_number", s_idx + 1),
+                        order_idx=s_idx + 1
+                    )
+                    db.add(sub)
 
         db.commit()
         log_stage(2, "Hierarchical Extraction")
@@ -184,15 +193,19 @@ def run_stages_1_to_5(db: Session, textbook_id: int):
 
         # Dynamically generate videos per topic (1 to 2 units per topic)
         for t_idx, topic in enumerate(created_topics):
-            # Dynamic video count per topic (demonstrates dynamic video count architecture)
             video_count = 2 if (t_idx % 2 == 0) else 1
+            subs = db.query(Subtopic).filter(Subtopic.topic_id == topic.id).order_by(Subtopic.sequence_number).all()
+            sub_titles = [s.title for s in subs]
+            sub_summary = f"Key subtopics analyzed include: {', '.join(sub_titles)}." if sub_titles else ""
+            desc = topic.description or f"Curriculum module on {topic.title}."
+
             for v_idx in range(video_count):
                 part_title = f"{topic.title} - Part {v_idx + 1}" if video_count > 1 else topic.title
                 script_text = (
-                    f"Welcome to this video lesson on {part_title}.\n"
-                    f"In this lesson, we will explore the core concepts from {textbook.title}.\n"
-                    f"First, let us examine the foundational definitions and principles.\n"
-                    f"Notice how each principle directly connects to real-world problem solving.\n"
+                    f"Welcome to this comprehensive video lesson on {part_title}.\n"
+                    f"{desc}\n"
+                    f"{sub_summary}\n"
+                    f"Notice how each principle directly connects to real-world problem solving and analytical modeling.\n"
                     f"In summary, mastering {part_title} prepares you for advanced exercises and assessments."
                 )
 
