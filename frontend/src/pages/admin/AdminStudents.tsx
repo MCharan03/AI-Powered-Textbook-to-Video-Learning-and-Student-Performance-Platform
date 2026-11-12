@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { Plus, Eye, Pencil, UserX, X } from 'lucide-react';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { DataTable, Column } from '../../components/DataTable';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { MessageBanner } from '../../components/admin/MessageBanner';
+import { Modal } from '../../components/admin/Modal';
+import { ConfirmDialog } from '../../components/admin/ConfirmDialog';
+import { ActionMenu } from '../../components/admin/ActionMenu';
+import { Pagination } from '../../components/admin/Pagination';
+import { StatusBadge } from '../../components/StatusBadge';
+import { FormField } from '../../components/admin/FormField';
+import { LoadingState } from '../../components/admin/LoadingState';
 import { api } from '../../lib/api';
 import { Student, StudentDetail, PaginatedResponse, SubjectItem, Parent } from '../../lib/types';
 
@@ -53,6 +63,7 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
 
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deactivateTarget, setDeactivateTarget] = useState<Student | null>(null);
 
   const fetchStudents = async () => {
     try {
@@ -193,16 +204,17 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
     }
   };
 
-  const handleDeactivate = async (s: Student) => {
-    if (!window.confirm(`Are you sure you want to deactivate ${s.name} (${s.student_id})? Historical academic records will be preserved.`)) {
-      return;
-    }
+  const confirmDeactivate = async () => {
+    if (!deactivateTarget) return;
+    const s = deactivateTarget;
     try {
       await api.deleteStudent(s.id);
       setMessage({ text: `Student ${s.name} deactivated.`, type: 'success' });
       fetchStudents();
     } catch (err: any) {
       setMessage({ text: err.message, type: 'error' });
+    } finally {
+      setDeactivateTarget(null);
     }
   };
 
@@ -273,7 +285,11 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
         </span>
       ),
     },
-    { key: 'name', header: 'Student Name' },
+    {
+      key: 'name',
+      header: 'Student Name',
+      render: (row) => <span style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{row.name}</span>,
+    },
     { key: 'class', header: 'Class', render: (row) => row.class || '—' },
     { key: 'section', header: 'Section', render: (row) => row.section || '—' },
     { key: 'roll_number', header: 'Roll #', render: (row) => row.roll_number || '—' },
@@ -291,240 +307,93 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
     {
       key: 'is_active',
       header: 'Status',
-      render: (row) => (
-        <span
-          style={{
-            padding: '3px 8px',
-            borderRadius: '4px',
-            fontSize: '11px',
-            fontWeight: 600,
-            backgroundColor: row.is_active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-            color: row.is_active ? '#34D399' : '#F87171',
-          }}
-        >
-          {row.is_active ? 'ACTIVE' : 'INACTIVE'}
-        </span>
-      ),
+      render: (row) => <StatusBadge status={row.is_active ? 'Active' : 'Inactive'} />,
     },
     {
       key: 'actions',
       header: 'Actions',
-      width: '180px',
+      width: '56px',
+      align: 'right',
       render: (row) => (
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => openDetail(row.id)}
-            style={{
-              padding: '4px 10px',
-              borderRadius: '4px',
-              border: '1px solid var(--admin-border)',
-              backgroundColor: 'transparent',
-              color: 'var(--admin-text)',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            View
-          </button>
-          <button
-            onClick={() => openEditModal(row)}
-            style={{
-              padding: '4px 10px',
-              borderRadius: '4px',
-              border: '1px solid var(--admin-border)',
-              backgroundColor: 'transparent',
-              color: '#60A5FA',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            Edit
-          </button>
-          {row.is_active && (
-            <button
-              onClick={() => handleDeactivate(row)}
-              style={{
-                padding: '4px 8px',
-                borderRadius: '4px',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                backgroundColor: 'transparent',
-                color: '#EF4444',
-                fontSize: '12px',
-                cursor: 'pointer',
-              }}
-            >
-              Deactivate
-            </button>
-          )}
-        </div>
+        <ActionMenu
+          ariaLabel={`Actions for student ${row.name}`}
+          items={[
+            { label: 'View', icon: <Eye size={14} />, onClick: () => openDetail(row.id) },
+            { label: 'Edit', icon: <Pencil size={14} />, onClick: () => openEditModal(row) },
+            ...(row.is_active
+              ? [
+                  {
+                    label: 'Deactivate',
+                    icon: <UserX size={14} />,
+                    danger: true,
+                    onClick: () => setDeactivateTarget(row),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Top Banner & Action */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)' }}>
-            Student Management
-          </h1>
-          <p style={{ color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
-            Manage student records, credentials, class enrollments, and parent associations.
-          </p>
-        </div>
-        <button
-          onClick={openCreateModal}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px',
-            border: 'none',
-            backgroundColor: 'var(--admin-primary)',
-            color: '#FFFFFF',
-            fontWeight: 600,
-            fontSize: '13px',
-            cursor: 'pointer',
-          }}
-        >
-          + Add New Student
-        </button>
-      </div>
-
-      {message && (
-        <div
-          style={{
-            padding: '12px 16px',
-            borderRadius: '8px',
-            backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            border: `1px solid ${message.type === 'success' ? '#10B981' : '#EF4444'}`,
-            color: message.type === 'success' ? '#34D399' : '#F87171',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <span>{message.text}</span>
-          <button
-            onClick={() => setMessage(null)}
-            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
-          >
-            ✕
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <PageHeader
+        title="Students"
+        description="Manage student records, credentials, class enrollments, and parent associations."
+        actions={
+          <button type="button" className="adm-btn adm-btn-primary" onClick={openCreateModal}>
+            <Plus size={15} />
+            Add Student
           </button>
-        </div>
-      )}
+        }
+      />
+
+      <MessageBanner message={message} onDismiss={() => setMessage(null)} />
 
       {/* Filter / Search Panel */}
       <SurfacePanel title="Filter & Search Students">
-        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
-          <div style={{ flex: '1 1 180px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-              Student ID
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. CMRIT26ECE001"
-              value={studentIdFilter}
-              onChange={(e) => setStudentIdFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                color: 'var(--admin-text)',
-                fontSize: '13px',
-              }}
-            />
-          </div>
-          <div style={{ flex: '1 1 180px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-              Student Name
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Alice"
-              value={nameFilter}
-              onChange={(e) => setNameFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                color: 'var(--admin-text)',
-                fontSize: '13px',
-              }}
-            />
-          </div>
-          <div style={{ flex: '1 1 140px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-              Class
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. 10th"
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                color: 'var(--admin-text)',
-                fontSize: '13px',
-              }}
-            />
-          </div>
-          <div style={{ flex: '1 1 100px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-              Section
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. A"
-              value={sectionFilter}
-              onChange={(e) => setSectionFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                color: 'var(--admin-text)',
-                fontSize: '13px',
-              }}
-            />
-          </div>
+        <form
+          onSubmit={handleSearchSubmit}
+          style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}
+        >
+          <FormField
+            label="Student ID"
+            name="filter-student-id"
+            value={studentIdFilter}
+            onChange={setStudentIdFilter}
+            placeholder="e.g. CMRIT26ECE001"
+            style={{ flex: '1 1 180px' }}
+          />
+          <FormField
+            label="Student Name"
+            name="filter-name"
+            value={nameFilter}
+            onChange={setNameFilter}
+            placeholder="e.g. Alice"
+            style={{ flex: '1 1 180px' }}
+          />
+          <FormField
+            label="Class"
+            name="filter-class"
+            value={classFilter}
+            onChange={setClassFilter}
+            placeholder="e.g. 10th"
+            style={{ flex: '1 1 140px' }}
+          />
+          <FormField
+            label="Section"
+            name="filter-section"
+            value={sectionFilter}
+            onChange={setSectionFilter}
+            placeholder="e.g. A"
+            style={{ flex: '1 1 100px' }}
+          />
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              type="submit"
-              style={{
-                padding: '8px 16px',
-                borderRadius: '6px',
-                border: 'none',
-                backgroundColor: 'var(--admin-primary)',
-                color: '#FFFFFF',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
+            <button type="submit" className="adm-btn adm-btn-primary">
               Filter
             </button>
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'transparent',
-                color: 'var(--admin-text-secondary)',
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
-            >
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={handleClearFilters}>
               Reset
             </button>
           </div>
@@ -533,386 +402,151 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
 
       {/* Students Data Table */}
       <SurfacePanel title={`Students Directory (${data.total} total)`}>
-        <DataTable columns={columns} data={data.items} emptyMessage="No students match the selected filters." />
+        {loading ? (
+          <LoadingState variant="table" rows={5} label="Loading students…" />
+        ) : (
+          <DataTable columns={columns} data={data.items} emptyMessage="No students match the selected filters." />
+        )}
 
-        {/* Pagination Bar */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginTop: '16px',
-            fontSize: '13px',
-            color: 'var(--admin-text-secondary)',
-          }}
-        >
-          <div>
-            Showing {data.items.length} of {data.total} records (Page {data.page} of {data.total_pages})
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: page <= 1 ? 'transparent' : 'rgba(255, 255, 255, 0.05)',
-                color: page <= 1 ? 'rgba(255, 255, 255, 0.2)' : 'var(--admin-text)',
-                cursor: page <= 1 ? 'not-allowed' : 'pointer',
-              }}
-            >
-              Previous
-            </button>
-            <span style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{page}</span>
-            <button
-              disabled={page >= data.total_pages}
-              onClick={() => setPage((p) => Math.min(data.total_pages, p + 1))}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: page >= data.total_pages ? 'transparent' : 'rgba(255, 255, 255, 0.05)',
-                color: page >= data.total_pages ? 'rgba(255, 255, 255, 0.2)' : 'var(--admin-text)',
-                cursor: page >= data.total_pages ? 'not-allowed' : 'pointer',
-              }}
-            >
-              Next
-            </button>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(1);
-              }}
-              style={{
-                padding: '6px 10px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'var(--admin-surface)',
-                color: 'var(--admin-text)',
-                fontSize: '12px',
-              }}
-            >
-              <option value="10">10 / page</option>
-              <option value="20">20 / page</option>
-              <option value="50">50 / page</option>
-              <option value="100">100 / page</option>
-            </select>
-          </div>
-        </div>
+        <Pagination
+          page={page}
+          totalPages={data.total_pages}
+          total={data.total}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </SurfacePanel>
 
       {/* Create / Edit Student Modal */}
-      {createModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px',
-          }}
+      <Modal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        title={editingStudent ? `Edit Student: ${editingStudent.student_id}` : 'Create New Student Account'}
+        maxWidth={640}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setCreateModalOpen(false)}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="admin-student-form"
+              className="adm-btn adm-btn-primary"
+              disabled={submitting}
+            >
+              {submitting ? 'Saving...' : editingStudent ? 'Save Changes' : 'Create Student'}
+            </button>
+          </>
+        }
+      >
+        <form
+          id="admin-student-form"
+          onSubmit={handleSaveStudent}
+          style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
         >
-          <div
-            style={{
-              backgroundColor: 'var(--admin-surface)',
-              border: '1px solid var(--admin-border)',
-              borderRadius: '12px',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '600px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-            }}
-          >
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)', marginBottom: '16px' }}>
-              {editingStudent ? `Edit Student: ${editingStudent.student_id}` : 'Create New Student Account'}
-            </h2>
-            <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Student ID (Unique Login ID) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    disabled={!!editingStudent}
-                    placeholder="e.g. CMRIT26ECE001"
-                    value={formStudentId}
-                    onChange={(e) => setFormStudentId(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: editingStudent ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Alice Smith"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Class
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 10th Grade"
-                    value={formClass}
-                    onChange={(e) => setFormClass(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Section
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. A"
-                    value={formSection}
-                    onChange={(e) => setFormSection(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Roll Number
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 24"
-                    value={formRoll}
-                    onChange={(e) => setFormRoll(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Date of Birth
-                  </label>
-                  <input
-                    type="date"
-                    value={formDob}
-                    onChange={(e) => setFormDob(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Phone
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="+1-555-0100"
-                    value={formPhone}
-                    onChange={(e) => setFormPhone(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  placeholder="student@example.com"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  {editingStudent ? 'Reset Password (Leave blank to keep unchanged)' : 'Initial Password *'}
-                </label>
-                <input
-                  type="password"
-                  required={!editingStudent}
-                  placeholder={editingStudent ? '••••••••' : 'Enter strong student password'}
-                  value={formPassword}
-                  onChange={(e) => setFormPassword(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={() => setCreateModalOpen(false)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'transparent',
-                    color: 'var(--admin-text-secondary)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    padding: '8px 20px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFFFFF',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {submitting ? 'Saving...' : (editingStudent ? 'Save Changes' : 'Create Student')}
-                </button>
-              </div>
-            </form>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
+            <FormField
+              label="Student ID (Unique Login ID)"
+              name="student-id"
+              required
+              disabled={!!editingStudent}
+              placeholder="e.g. CMRIT26ECE001"
+              value={formStudentId}
+              onChange={setFormStudentId}
+            />
+            <FormField
+              label="Full Name"
+              name="student-name"
+              required
+              placeholder="e.g. Alice Smith"
+              value={formName}
+              onChange={setFormName}
+            />
           </div>
-        </div>
-      )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '14px' }}>
+            <FormField
+              label="Class"
+              name="student-class"
+              placeholder="e.g. 10th Grade"
+              value={formClass}
+              onChange={setFormClass}
+            />
+            <FormField
+              label="Section"
+              name="student-section"
+              placeholder="e.g. A"
+              value={formSection}
+              onChange={setFormSection}
+            />
+            <FormField
+              label="Roll Number"
+              name="student-roll"
+              placeholder="e.g. 24"
+              value={formRoll}
+              onChange={setFormRoll}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
+            <FormField
+              label="Date of Birth"
+              name="student-dob"
+              type="date"
+              value={formDob}
+              onChange={setFormDob}
+            />
+            <FormField
+              label="Phone"
+              name="student-phone"
+              placeholder="+1-555-0100"
+              value={formPhone}
+              onChange={setFormPhone}
+            />
+          </div>
+
+          <FormField
+            label="Email Address"
+            name="student-email"
+            type="email"
+            placeholder="student@example.com"
+            value={formEmail}
+            onChange={setFormEmail}
+          />
+
+          <FormField
+            label={editingStudent ? 'Reset Password (Leave blank to keep unchanged)' : 'Initial Password'}
+            name="student-password"
+            type="password"
+            required={!editingStudent}
+            placeholder={editingStudent ? '••••••••' : 'Enter strong student password'}
+            value={formPassword}
+            onChange={setFormPassword}
+          />
+        </form>
+      </Modal>
 
       {/* Student Detail Modal */}
-      {detailModalOpen && selectedStudentDetail && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--admin-surface)',
-              border: '1px solid var(--admin-border)',
-              borderRadius: '12px',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '750px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--admin-border)', paddingBottom: '12px' }}>
-              <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)' }}>
-                  {selectedStudentDetail.name} ({selectedStudentDetail.student_id})
-                </h2>
-                <p style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
-                  Class: {selectedStudentDetail.class || 'N/A'} | Section: {selectedStudentDetail.section || 'N/A'} | Roll #: {selectedStudentDetail.roll_number || 'N/A'}
-                </p>
-              </div>
-              <button
-                onClick={() => setDetailModalOpen(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--admin-text-secondary)', fontSize: '18px', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
-            </div>
-
+      <Modal
+        open={detailModalOpen && !!selectedStudentDetail}
+        onClose={() => setDetailModalOpen(false)}
+        title={
+          selectedStudentDetail
+            ? `${selectedStudentDetail.name} (${selectedStudentDetail.student_id})`
+            : 'Student Details'
+        }
+        subtitle={
+          selectedStudentDetail
+            ? `Class: ${selectedStudentDetail.class || '—'} | Section: ${selectedStudentDetail.section || '—'} | Roll #: ${selectedStudentDetail.roll_number || '—'}`
+            : undefined
+        }
+        maxWidth={760}
+      >
+        {selectedStudentDetail && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Parents Linkage Section */}
-            <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--admin-border)' }}>
+            <div className="adm-card" style={{ padding: '16px' }}>
               <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '10px' }}>
                 Linked Parents & Guardians
               </h3>
@@ -927,14 +561,22 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
+                        gap: '8px',
                         padding: '8px 12px',
-                        borderRadius: '6px',
-                        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--admin-surface-raised)',
                       }}
                     >
-                      <div>
-                        <span style={{ fontWeight: 600, color: '#818CF8', marginRight: '8px' }}>
-                          [{p.relationship}]
+                      <div style={{ minWidth: 0 }}>
+                        <span
+                          className="adm-badge"
+                          style={{
+                            backgroundColor: 'var(--admin-primary-soft)',
+                            color: 'var(--admin-primary)',
+                            marginRight: '8px',
+                          }}
+                        >
+                          {p.relationship}
                         </span>
                         <span style={{ color: 'var(--admin-text)', fontWeight: 500 }}>{p.name}</span>
                         <span style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginLeft: '8px' }}>
@@ -942,14 +584,10 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
                         </span>
                       </div>
                       <button
+                        type="button"
+                        className="adm-btn adm-btn-ghost adm-btn-sm"
+                        style={{ color: 'var(--admin-error)' }}
                         onClick={() => handleUnlinkParent(p.parent_id)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#EF4444',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                        }}
                       >
                         Unlink
                       </button>
@@ -959,65 +597,45 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
               )}
 
               {/* Link Parent Form */}
-              <form onSubmit={handleLinkParent} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                <select
+              <form
+                onSubmit={handleLinkParent}
+                style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'flex-end' }}
+              >
+                <FormField
+                  label="Parent"
+                  name="link-parent"
+                  type="select"
                   required
                   value={linkParentId}
-                  onChange={(e) => setLinkParentId(e.target.value)}
-                  style={{
-                    flex: 1,
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'var(--admin-surface)',
-                    color: 'var(--admin-text)',
-                    fontSize: '12px',
-                  }}
-                >
-                  <option value="">Select Parent to Link...</option>
-                  {allParents.map((p) => (
-                    <option key={p.id} value={p.parent_id}>
-                      {p.name} ({p.parent_id})
-                    </option>
-                  ))}
-                </select>
-                <select
+                  onChange={setLinkParentId}
+                  options={[
+                    { value: '', label: 'Select Parent to Link...' },
+                    ...allParents.map((p) => ({ value: p.parent_id, label: `${p.name} (${p.parent_id})` })),
+                  ]}
+                  style={{ flex: '1 1 220px' }}
+                />
+                <FormField
+                  label="Relationship"
+                  name="link-relationship"
+                  type="select"
                   value={linkRelationship}
-                  onChange={(e) => setLinkRelationship(e.target.value)}
-                  style={{
-                    width: '120px',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'var(--admin-surface)',
-                    color: 'var(--admin-text)',
-                    fontSize: '12px',
-                  }}
-                >
-                  <option value="Father">Father</option>
-                  <option value="Mother">Mother</option>
-                  <option value="Guardian">Guardian</option>
-                </select>
-                <button
-                  type="submit"
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFFFFF',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  + Link
+                  onChange={setLinkRelationship}
+                  options={[
+                    { value: 'Father', label: 'Father' },
+                    { value: 'Mother', label: 'Mother' },
+                    { value: 'Guardian', label: 'Guardian' },
+                  ]}
+                  style={{ width: '150px' }}
+                />
+                <button type="submit" className="adm-btn adm-btn-primary adm-btn-sm">
+                  <Plus size={14} />
+                  Link
                 </button>
               </form>
             </div>
 
             {/* Assigned Subjects Section */}
-            <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--admin-border)' }}>
+            <div className="adm-card" style={{ padding: '16px' }}>
               <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '10px' }}>
                 Enrolled Subjects
               </h3>
@@ -1026,92 +644,77 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                   {selectedStudentDetail.subjects.map((sub) => (
-                    <div
+                    <span
                       key={sub.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        backgroundColor: 'rgba(37, 99, 235, 0.15)',
-                        border: '1px solid rgba(37, 99, 235, 0.3)',
-                        color: '#60A5FA',
-                        fontSize: '12px',
-                      }}
+                      className="adm-badge"
+                      style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }}
                     >
-                      <span>{sub.name}</span>
+                      {sub.name}
                       <button
+                        type="button"
+                        aria-label={`Unassign ${sub.name}`}
                         onClick={() => handleUnassignSubject(sub.subject_id)}
-                        style={{ background: 'none', border: 'none', color: '#F87171', cursor: 'pointer', fontSize: '12px' }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          cursor: 'pointer',
+                          color: 'inherit',
+                        }}
                       >
-                        ✕
+                        <X size={12} />
                       </button>
-                    </div>
+                    </span>
                   ))}
                 </div>
               )}
 
               {/* Assign Subject Form */}
-              <form onSubmit={handleAssignSubject} style={{ display: 'flex', gap: '8px' }}>
-                <select
+              <form
+                onSubmit={handleAssignSubject}
+                style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'flex-end' }}
+              >
+                <FormField
+                  label="Subject"
+                  name="assign-subject"
+                  type="select"
                   required
                   value={assignSubjectId}
-                  onChange={(e) => setAssignSubjectId(Number(e.target.value))}
-                  style={{
-                    flex: 1,
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'var(--admin-surface)',
-                    color: 'var(--admin-text)',
-                    fontSize: '12px',
-                  }}
-                >
-                  <option value="">Select Subject to Assign...</option>
-                  {allSubjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.class || 'All Classes'})
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="submit"
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFFFFF',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  + Assign
+                  onChange={(v) => setAssignSubjectId(v === '' ? '' : Number(v))}
+                  options={[
+                    { value: '', label: 'Select Subject to Assign...' },
+                    ...allSubjects.map((s) => ({
+                      value: s.id,
+                      label: `${s.name} (${s.class || 'All Classes'})`,
+                    })),
+                  ]}
+                  style={{ flex: '1 1 220px' }}
+                />
+                <button type="submit" className="adm-btn adm-btn-primary adm-btn-sm">
+                  <Plus size={14} />
+                  Assign
                 </button>
               </form>
             </div>
 
             {/* Assigned Teachers Section */}
-            <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--admin-border)' }}>
+            <div className="adm-card" style={{ padding: '16px' }}>
               <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '8px' }}>
                 Assigned Teachers
               </h3>
               {selectedStudentDetail.teachers.length === 0 ? (
-                <p style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>No teachers assigned to this student.</p>
+                <p style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
+                  No teachers assigned to this student.
+                </p>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {selectedStudentDetail.teachers.map((t) => (
                     <span
                       key={t.id}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                        fontSize: '12px',
-                        color: 'var(--admin-text)',
-                      }}
+                      className="adm-badge"
+                      style={{ backgroundColor: 'var(--admin-surface-raised)', color: 'var(--admin-text)' }}
                     >
                       {t.name} ({t.teacher_id})
                     </span>
@@ -1122,28 +725,54 @@ export const AdminStudents: React.FC<AdminStudentsProps> = ({ onNavigate, select
 
             {/* Recent Activity */}
             {selectedStudentDetail.recent_activity && selectedStudentDetail.recent_activity.length > 0 && (
-              <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--admin-border)' }}>
+              <div className="adm-card" style={{ padding: '16px' }}>
                 <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '8px' }}>
                   Recent Activity
                 </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {selectedStudentDetail.recent_activity.map((act, idx) => (
-                    <div key={idx} style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
+                    <div
+                      key={idx}
+                      style={{
+                        fontSize: '12px',
+                        color: 'var(--admin-text-secondary)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                      }}
+                    >
                       <span>
-                        <strong style={{ color: act.type === 'video' ? '#60A5FA' : '#34D399' }}>
+                        <strong style={{ color: act.type === 'video' ? 'var(--admin-primary)' : 'var(--admin-success)' }}>
                           [{act.type.toUpperCase()}]
                         </strong>{' '}
                         {act.title}
                       </span>
-                      <span>{act.completed ? 'Completed' : (act.score !== undefined ? `${act.percentage}%` : 'In Progress')}</span>
+                      <span>
+                        {act.completed ? 'Completed' : act.score !== undefined ? `${act.percentage}%` : 'In Progress'}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
+
+      {/* Deactivate Confirmation */}
+      <ConfirmDialog
+        open={!!deactivateTarget}
+        title="Deactivate Student"
+        message={
+          deactivateTarget
+            ? `Are you sure you want to deactivate ${deactivateTarget.name} (${deactivateTarget.student_id})? Historical academic records will be preserved.`
+            : ''
+        }
+        confirmLabel="Deactivate"
+        danger
+        onConfirm={confirmDeactivate}
+        onCancel={() => setDeactivateTarget(null)}
+      />
     </div>
   );
 };

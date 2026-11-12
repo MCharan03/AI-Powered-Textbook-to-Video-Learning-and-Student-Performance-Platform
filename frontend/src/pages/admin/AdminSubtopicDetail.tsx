@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, Pencil, ArrowRight, ListTree, Plus } from 'lucide-react';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { CurriculumTree } from '../../components/CurriculumTree';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { MessageBanner } from '../../components/admin/MessageBanner';
+import { Modal } from '../../components/admin/Modal';
+import { FormField } from '../../components/admin/FormField';
+import { LoadingState } from '../../components/admin/LoadingState';
+import { EmptyState } from '../../components/admin/EmptyState';
 import { api } from '../../lib/api';
 import { SubtopicItem, TopicDetail, ChapterDetail, SubjectDetail, SubjectItem, ChapterItem, TopicItem } from '../../lib/types';
 
@@ -185,81 +192,72 @@ export const AdminSubtopicDetail: React.FC<AdminSubtopicDetailProps> = ({ subtop
     }
   };
 
+  const breadcrumbStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    flexWrap: 'wrap',
+    fontSize: '13px',
+    color: 'var(--admin-text-secondary)',
+    marginBottom: '8px',
+  };
+
+  const crumbButton = (label: string, onClick: () => void) => (
+    <button type="button" className="adm-btn adm-btn-ghost adm-btn-sm" onClick={onClick}>
+      <ChevronLeft size={13} />
+      {label}
+    </button>
+  );
+
+  const crumbSeparator = <ChevronRight size={13} style={{ color: 'var(--admin-text-secondary)', flexShrink: 0 }} />;
+
   if (loading && !subtopic && activeSubtopicId) {
-    return <div style={{ padding: '24px', color: 'var(--admin-text)' }}>Loading subtopic...</div>;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <PageHeader title="Subtopic Details" description="Loading subtopic…" />
+        <SurfacePanel>
+          <LoadingState label="Loading subtopic…" rows={5} />
+        </SurfacePanel>
+      </div>
+    );
   }
 
   if (!activeSubtopicId || !subtopic) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        {message && (
-          <div
-            style={{
-              padding: '12px 16px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-              color: message.type === 'success' ? '#34D399' : '#F87171',
-              border: `1px solid ${message.type === 'success' ? '#059669' : '#DC2626'}`,
-            }}
-          >
-            {message.text}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)' }}>
-              Curriculum Subtopics Management
-            </h1>
-            <p style={{ color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
-              Select a subject, chapter, and topic to view and manage granular subtopic concepts.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <PageHeader
+          title="Curriculum Subtopics Management"
+          description="Select a subject, chapter, and topic to view and manage granular subtopic concepts."
+          actions={
             <button
+              className="adm-btn adm-btn-primary"
               onClick={() => setAddSubModalOpen(true)}
               disabled={!selectedTopicId}
-              style={{
-                padding: '10px 20px',
-                borderRadius: '8px',
-                border: 'none',
-                backgroundColor: 'var(--admin-primary)',
-                color: '#FFFFFF',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: selectedTopicId ? 'pointer' : 'not-allowed',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
             >
-              <span>+</span>
-              <span>Add Subtopic</span>
+              <Plus size={15} />
+              Add Subtopic
             </button>
-          </div>
-        </div>
+          }
+        />
+
+        <MessageBanner message={message} onDismiss={() => setMessage(null)} />
 
         {/* Filter Bar */}
         <SurfacePanel>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--admin-text)' }}>Subject:</span>
+              <label className="adm-label" htmlFor="subtopic-subject-select" style={{ marginBottom: 0 }}>
+                Subject:
+              </label>
               <select
+                id="subtopic-subject-select"
+                className="adm-select"
                 value={selectedSubjectId || ''}
                 onChange={(e) => setSelectedSubjectId(Number(e.target.value))}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--admin-border)',
-                  backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                  color: 'var(--admin-text)',
-                  fontSize: '13px',
-                }}
+                style={{ maxWidth: '220px' }}
               >
                 {subjectsList.map((s) => (
-                  <option key={s.id} value={s.id} style={{ backgroundColor: '#1E293B', color: '#FFFFFF' }}>
+                  <option key={s.id} value={s.id}>
                     {s.name} ({s.class})
                   </option>
                 ))}
@@ -267,21 +265,18 @@ export const AdminSubtopicDetail: React.FC<AdminSubtopicDetailProps> = ({ subtop
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--admin-text)' }}>Chapter:</span>
+              <label className="adm-label" htmlFor="subtopic-chapter-select" style={{ marginBottom: 0 }}>
+                Chapter:
+              </label>
               <select
+                id="subtopic-chapter-select"
+                className="adm-select"
                 value={selectedChapterId || ''}
                 onChange={(e) => setSelectedChapterId(Number(e.target.value))}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--admin-border)',
-                  backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                  color: 'var(--admin-text)',
-                  fontSize: '13px',
-                }}
+                style={{ maxWidth: '240px' }}
               >
                 {subjectChapters.map((ch) => (
-                  <option key={ch.id} value={ch.id} style={{ backgroundColor: '#1E293B', color: '#FFFFFF' }}>
+                  <option key={ch.id} value={ch.id}>
                     Ch {ch.chapter_number}: {ch.title}
                   </option>
                 ))}
@@ -289,21 +284,18 @@ export const AdminSubtopicDetail: React.FC<AdminSubtopicDetailProps> = ({ subtop
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--admin-text)' }}>Topic:</span>
+              <label className="adm-label" htmlFor="subtopic-topic-select" style={{ marginBottom: 0 }}>
+                Topic:
+              </label>
               <select
+                id="subtopic-topic-select"
+                className="adm-select"
                 value={selectedTopicId || ''}
                 onChange={(e) => setSelectedTopicId(Number(e.target.value))}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--admin-border)',
-                  backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                  color: 'var(--admin-text)',
-                  fontSize: '13px',
-                }}
+                style={{ maxWidth: '240px' }}
               >
                 {chapterTopics.map((top) => (
-                  <option key={top.id} value={top.id} style={{ backgroundColor: '#1E293B', color: '#FFFFFF' }}>
+                  <option key={top.id} value={top.id}>
                     #{top.sequence_number}: {top.title}
                   </option>
                 ))}
@@ -326,14 +318,8 @@ export const AdminSubtopicDetail: React.FC<AdminSubtopicDetailProps> = ({ subtop
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                        color: '#A78BFA',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                      }}
+                      className="adm-badge"
+                      style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }}
                     >
                       Subtopic #{sub.sequence_number}
                     </span>
@@ -341,168 +327,81 @@ export const AdminSubtopicDetail: React.FC<AdminSubtopicDetailProps> = ({ subtop
                   <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '6px' }}>
                     {sub.title}
                   </h3>
-                  <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', lineHeight: '1.4' }}>
+                  <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', lineHeight: 1.4 }}>
                     {sub.description || 'No subtopic description configured.'}
                   </p>
                 </div>
 
                 <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                   <button
+                    className="adm-btn adm-btn-primary adm-btn-sm"
                     onClick={() => setActiveSubtopicId(sub.id)}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      backgroundColor: 'var(--admin-primary)',
-                      color: '#FFFFFF',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
                   >
-                    View Details →
+                    View Details
+                    <ArrowRight size={13} />
                   </button>
                 </div>
               </div>
             </SurfacePanel>
           ))}
           {topicSubtopics.length === 0 && (
-            <div style={{ gridColumn: '1 / -1', padding: '32px', textAlign: 'center', color: 'var(--admin-text-secondary)' }}>
-              No subtopics created for this topic yet. Click "+ Add Subtopic" to create the first one.
+            <div style={{ gridColumn: '1 / -1' }}>
+              <EmptyState
+                title="No subtopics yet"
+                description="No subtopics created for this topic yet. Use the Add Subtopic button to create the first one."
+                icon={<ListTree size={20} />}
+              />
             </div>
           )}
         </div>
 
         {/* Add Subtopic Modal */}
-        {addSubModalOpen && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.6)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000,
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: 'var(--admin-surface)',
-                border: '1px solid var(--admin-border)',
-                borderRadius: '12px',
-                padding: '24px',
-                width: '460px',
-                maxWidth: '90vw',
-              }}
-            >
-              <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '16px' }}>
-                Create New Subtopic
-              </h3>
-              <form onSubmit={handleCreateSubtopicForTopic} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Sequence Number *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    value={newSubSeq}
-                    onChange={(e) => setNewSubSeq(Number(e.target.value))}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Subtopic Title *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newSubTitle}
-                    onChange={(e) => setNewSubTitle(e.target.value)}
-                    placeholder="e.g. Scalar Quantity"
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Description
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={newSubDescription}
-                    onChange={(e) => setNewSubDescription(e.target.value)}
-                    placeholder="Brief description..."
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                      resize: 'vertical',
-                    }}
-                  />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setAddSubModalOpen(false)}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'transparent',
-                      color: 'var(--admin-text-secondary)',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    style={{
-                      padding: '8px 20px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      backgroundColor: 'var(--admin-primary)',
-                      color: '#FFFFFF',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: submitting ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {submitting ? 'Creating...' : 'Create Subtopic'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        <Modal
+          open={addSubModalOpen}
+          onClose={() => setAddSubModalOpen(false)}
+          title="Create New Subtopic"
+          subtitle="Subtopics are the granular units used for AI video and quiz generation."
+          maxWidth={460}
+          footer={
+            <>
+              <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setAddSubModalOpen(false)} disabled={submitting}>
+                Cancel
+              </button>
+              <button type="submit" form="create-subtopic-form" className="adm-btn adm-btn-primary" disabled={submitting}>
+                {submitting ? 'Creating…' : 'Create Subtopic'}
+              </button>
+            </>
+          }
+        >
+          <form id="create-subtopic-form" onSubmit={handleCreateSubtopicForTopic} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <FormField
+              label="Sequence Number"
+              name="new-subtopic-sequence"
+              type="number"
+              required
+              min={1}
+              value={newSubSeq}
+              onChange={(v) => setNewSubSeq(Number(v))}
+            />
+            <FormField
+              label="Subtopic Title"
+              name="new-subtopic-title"
+              type="text"
+              required
+              placeholder="e.g. Scalar Quantity"
+              value={newSubTitle}
+              onChange={setNewSubTitle}
+            />
+            <FormField
+              label="Description"
+              name="new-subtopic-description"
+              type="textarea"
+              placeholder="Brief description..."
+              value={newSubDescription}
+              onChange={setNewSubDescription}
+            />
+          </form>
+        </Modal>
       </div>
     );
   }
@@ -510,137 +409,77 @@ export const AdminSubtopicDetail: React.FC<AdminSubtopicDetailProps> = ({ subtop
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Breadcrumb & Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--admin-text-secondary)', marginBottom: '8px' }}>
-            <span
-              onClick={() => { setActiveSubtopicId(undefined); setSubtopic(null); }}
-              style={{ cursor: 'pointer', color: '#60A5FA' }}
-            >
-              All Subtopics
-            </span>
-            <span>/</span>
-            <span
-              onClick={() => onNavigate && onNavigate('admin-subjects')}
-              style={{ cursor: 'pointer', color: '#60A5FA' }}
-            >
-              Subjects
-            </span>
-            <span>/</span>
-            {parentSubject && (
-              <>
-                <span
-                  onClick={() => onNavigate && onNavigate('admin-subjects', { subjectId: parentSubject.id })}
-                  style={{ cursor: 'pointer', color: '#60A5FA' }}
-                >
-                  {parentSubject.name}
-                </span>
-                <span>/</span>
-              </>
-            )}
-            {parentChapter && (
-              <>
-                <span
-                  onClick={() => onNavigate && onNavigate('admin-chapters', { chapterId: parentChapter.id })}
-                  style={{ cursor: 'pointer', color: '#60A5FA' }}
-                >
-                  Chapter {parentChapter.chapter_number}
-                </span>
-                <span>/</span>
-              </>
-            )}
-            {parentTopic && (
-              <>
-                <span
-                  onClick={() => onNavigate && onNavigate('admin-topics', { topicId: parentTopic.id })}
-                  style={{ cursor: 'pointer', color: '#60A5FA' }}
-                >
-                  Topic {parentTopic.sequence_number}
-                </span>
-                <span>/</span>
-              </>
-            )}
-            <span style={{ color: 'var(--admin-text)' }}>Subtopic {subtopic.sequence_number}</span>
-          </div>
-
-          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)' }}>
-            Subtopic {subtopic.sequence_number}: {subtopic.title}
-          </h1>
-          <p style={{ color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
-            {subtopic.description || 'No detailed subtopic description configured.'}
-          </p>
+      <div>
+        <div style={breadcrumbStyle}>
+          {crumbButton('All Subtopics', () => { setActiveSubtopicId(undefined); setSubtopic(null); })}
+          {crumbSeparator}
+          {crumbButton('Subjects', () => onNavigate && onNavigate('admin-subjects'))}
+          {parentSubject && (
+            <>
+              {crumbSeparator}
+              {crumbButton(parentSubject.name, () => onNavigate && onNavigate('admin-subjects', { subjectId: parentSubject.id }))}
+            </>
+          )}
+          {parentChapter && (
+            <>
+              {crumbSeparator}
+              {crumbButton(`Chapter ${parentChapter.chapter_number}`, () => onNavigate && onNavigate('admin-chapters', { chapterId: parentChapter.id }))}
+            </>
+          )}
+          {parentTopic && (
+            <>
+              {crumbSeparator}
+              {crumbButton(`Topic ${parentTopic.sequence_number}`, () => onNavigate && onNavigate('admin-topics', { topicId: parentTopic.id }))}
+            </>
+          )}
+          {crumbSeparator}
+          <span style={{ color: 'var(--admin-text)', fontWeight: 600 }}>Subtopic {subtopic.sequence_number}</span>
         </div>
 
-        <button
-          onClick={() => setEditModalOpen(true)}
-          style={{
-            padding: '8px 18px',
-            borderRadius: '8px',
-            border: 'none',
-            backgroundColor: 'var(--admin-primary)',
-            color: '#FFFFFF',
-            fontWeight: 600,
-            fontSize: '13px',
-            cursor: 'pointer',
-          }}
-        >
-          Edit Subtopic
-        </button>
+        <PageHeader
+          title={`Subtopic ${subtopic.sequence_number}: ${subtopic.title}`}
+          description={subtopic.description || 'No detailed subtopic description configured.'}
+          actions={
+            <button className="adm-btn adm-btn-primary" onClick={() => setEditModalOpen(true)}>
+              <Pencil size={14} />
+              Edit Subtopic
+            </button>
+          }
+        />
       </div>
 
-      {message && (
-        <div
-          style={{
-            padding: '12px 16px',
-            borderRadius: '8px',
-            backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            border: `1px solid ${message.type === 'success' ? '#10B981' : '#EF4444'}`,
-            color: message.type === 'success' ? '#34D399' : '#F87171',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <span>{message.text}</span>
-          <button
-            onClick={() => setMessage(null)}
-            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
+      <MessageBanner message={message} onDismiss={() => setMessage(null)} />
 
       {/* Grid: Subtopic Details + Visual Tree */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr)', gap: '24px' }}>
         <SurfacePanel title="Subtopic Architecture & Specifications">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--admin-border)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px' }}>
+            <div style={{ padding: '16px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--admin-surface-raised)', border: '1px solid var(--admin-border)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '12px', fontSize: '13px' }}>
                 <div>
                   <span style={{ color: 'var(--admin-text-secondary)' }}>Subtopic Sequence:</span>{' '}
                   <strong style={{ color: 'var(--admin-text)' }}>#{subtopic.sequence_number}</strong>
                 </div>
                 <div>
                   <span style={{ color: 'var(--admin-text-secondary)' }}>Parent Topic:</span>{' '}
-                  <strong style={{ color: '#60A5FA' }}>{parentTopic?.title || 'None'}</strong>
+                  <strong style={{ color: 'var(--admin-primary)' }}>{parentTopic?.title || '—'}</strong>
                 </div>
                 <div>
                   <span style={{ color: 'var(--admin-text-secondary)' }}>Parent Chapter:</span>{' '}
-                  <strong style={{ color: 'var(--admin-text)' }}>CH {parentChapter?.chapter_number} ({parentChapter?.title})</strong>
+                  <strong style={{ color: 'var(--admin-text)' }}>CH {parentChapter?.chapter_number ?? '—'} ({parentChapter?.title || '—'})</strong>
                 </div>
                 <div>
                   <span style={{ color: 'var(--admin-text-secondary)' }}>Subject:</span>{' '}
-                  <strong style={{ color: 'var(--admin-text)' }}>{parentSubject?.name || 'None'}</strong>
+                  <strong style={{ color: 'var(--admin-text)' }}>{parentSubject?.name || '—'}</strong>
                 </div>
               </div>
             </div>
 
-            <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+            <div style={{ padding: '16px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--admin-primary-soft)', border: '1px solid var(--admin-border)' }}>
               <h4 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--admin-primary)', marginBottom: '6px' }}>
                 AI Generation Readiness
               </h4>
-              <p style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', lineHeight: '1.5' }}>
+              <p style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', lineHeight: 1.5 }}>
                 This subtopic node provides the granular focal point for Stage 4 narration script generation and ~5.5-minute micro-lesson synthesis when the AI processing pipeline is triggered for associated curriculum textbooks.
               </p>
             </div>
@@ -659,134 +498,50 @@ export const AdminSubtopicDetail: React.FC<AdminSubtopicDetailProps> = ({ subtop
       </div>
 
       {/* Edit Modal */}
-      {editModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--admin-surface)',
-              border: '1px solid var(--admin-border)',
-              borderRadius: '12px',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '500px',
-            }}
-          >
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)', marginBottom: '16px' }}>
-              Edit Subtopic #{subtopic.sequence_number}
-            </h2>
-            <form onSubmit={handleUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Sequence Number *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  value={seqNumber}
-                  onChange={(e) => setSeqNumber(Number(e.target.value))}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Subtopic Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Description
-                </label>
-                <textarea
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                    resize: 'vertical',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={() => setEditModalOpen(false)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'transparent',
-                    color: 'var(--admin-text-secondary)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    padding: '8px 20px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFFFFF',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {submitting ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title={`Edit Subtopic #${subtopic.sequence_number}`}
+        subtitle="Update subtopic sequencing, title, and description."
+        maxWidth={500}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setEditModalOpen(false)} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" form="edit-subtopic-form" className="adm-btn adm-btn-primary" disabled={submitting}>
+              {submitting ? 'Saving…' : 'Save Changes'}
+            </button>
+          </>
+        }
+      >
+        <form id="edit-subtopic-form" onSubmit={handleUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <FormField
+            label="Sequence Number"
+            name="edit-subtopic-sequence"
+            type="number"
+            required
+            min={1}
+            value={seqNumber}
+            onChange={(v) => setSeqNumber(Number(v))}
+          />
+          <FormField
+            label="Subtopic Title"
+            name="edit-subtopic-title"
+            type="text"
+            required
+            value={title}
+            onChange={setTitle}
+          />
+          <FormField
+            label="Description"
+            name="edit-subtopic-description"
+            type="textarea"
+            value={description}
+            onChange={setDescription}
+          />
+        </form>
+      </Modal>
     </div>
   );
 };

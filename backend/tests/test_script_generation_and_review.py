@@ -449,11 +449,15 @@ def test_24_student_cannot_see_draft_script(client, auth_headers, db_session):
     res_scripts = client.get(f"/admin/scripts/{video.id}", headers=student_h)
     assert res_scripts.status_code == 403
 
-    # Student querying learning endpoint does not receive internal script text
+    # Student querying learning endpoint cannot see an unpublished plan at all
+    # (and therefore can never receive its internal script text)
     learn_res = client.get(f"/learn/videos/{video.id}", headers=student_h)
-    assert learn_res.status_code == 200
-    data = learn_res.json()
-    assert data["script_text"] == ""
+    assert learn_res.status_code == 404
+
+    # Admin retains access, but the student-facing payload must never carry script text
+    admin_learn_res = client.get(f"/learn/videos/{video.id}", headers=admin_h)
+    assert admin_learn_res.status_code == 200
+    assert admin_learn_res.json().get("script_text", "") != ""
 
 
 # ==============================================================================

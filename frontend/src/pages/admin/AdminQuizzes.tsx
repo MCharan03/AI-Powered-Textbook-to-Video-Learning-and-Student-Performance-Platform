@@ -1,4 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { MessageBanner } from '../../components/admin/MessageBanner';
+import { SearchBar } from '../../components/admin/SearchBar';
+import { Modal } from '../../components/admin/Modal';
+import { ConfirmDialog } from '../../components/admin/ConfirmDialog';
+import { EmptyState } from '../../components/admin/EmptyState';
+import { StatusBadge } from '../../components/StatusBadge';
+import { SurfacePanel } from '../../components/SurfacePanel';
+import { Sparkles, Pencil, RefreshCw, Trash2, Lightbulb, FileQuestion, Check, Archive, Send } from 'lucide-react';
 import { api } from '../../lib/api';
 import {
   AdminQuizItem,
@@ -10,6 +19,14 @@ import {
   QuizGenerateRequest
 } from '../../lib/types';
 
+const FILTER_STATUSES = ['ALL', 'DRAFT', 'REVIEW', 'PUBLISHED', 'ARCHIVED'];
+
+type PendingConfirm =
+  | { type: 'archive' }
+  | { type: 'regenerateQuiz' }
+  | { type: 'deleteQuestion'; questionId: number }
+  | null;
+
 export const AdminQuizzes: React.FC = () => {
   const [quizzes, setQuizzes] = useState<AdminQuizItem[]>([]);
   const [selectedQuiz, setSelectedQuiz] = useState<AdminQuizItem | null>(null);
@@ -19,6 +36,7 @@ export const AdminQuizzes: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
 
   // Generation Modal State
   const [showGenModal, setShowGenModal] = useState(false);
@@ -200,7 +218,6 @@ export const AdminQuizzes: React.FC = () => {
 
   const handleArchive = async () => {
     if (!selectedQuiz) return;
-    if (!confirm('Are you sure you want to archive this quiz? Students will no longer see it.')) return;
     try {
       setActionLoading(true);
       setErrorMsg(null);
@@ -217,7 +234,6 @@ export const AdminQuizzes: React.FC = () => {
 
   const handleRegenerateQuiz = async () => {
     if (!selectedQuiz) return;
-    if (!confirm('Regenerate all questions in this quiz? Manual edits will be replaced.')) return;
     try {
       setActionLoading(true);
       setErrorMsg(null);
@@ -250,7 +266,6 @@ export const AdminQuizzes: React.FC = () => {
   };
 
   const handleDeleteQuestion = async (qId: number) => {
-    if (!confirm('Are you sure you want to delete this question?')) return;
     try {
       setActionLoading(true);
       setErrorMsg(null);
@@ -319,6 +334,15 @@ export const AdminQuizzes: React.FC = () => {
     }
   };
 
+  const handleConfirmPending = () => {
+    const action = pendingConfirm;
+    setPendingConfirm(null);
+    if (!action) return;
+    if (action.type === 'archive') handleArchive();
+    else if (action.type === 'regenerateQuiz') handleRegenerateQuiz();
+    else if (action.type === 'deleteQuestion') handleDeleteQuestion(action.questionId);
+  };
+
   const filteredQuizzes = quizzes.filter((q) => {
     const matchStatus = filterStatus === 'ALL' || q.status === filterStatus;
     const matchSearch =
@@ -328,202 +352,226 @@ export const AdminQuizzes: React.FC = () => {
     return matchStatus && matchSearch;
   });
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <span className="p-2 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
-              🎯
-            </span>
-            Quiz Management & Review
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Build 07 — Grounded Assessment Generation, Bloom's Taxonomy Validation & Student Mastery Engine
-          </p>
-        </div>
-        <button
-          onClick={() => setShowGenModal(true)}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-medium text-sm rounded-xl shadow-sm shadow-indigo-200 dark:shadow-none transition-all"
-        >
-          <span>✨</span> Generate New Quiz
-        </button>
-      </div>
+  const bannerMessage = successMsg
+    ? { text: successMsg, type: 'success' as const }
+    : errorMsg
+    ? { text: errorMsg, type: 'error' as const }
+    : null;
 
-      {/* Notifications */}
-      {errorMsg && (
-        <div className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 rounded-xl flex items-center justify-between">
-          <span>{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="text-red-500 hover:text-red-700 font-bold ml-4">
-            ×
+  const difficultyBadgeStyle = (difficulty?: string): React.CSSProperties => {
+    if (difficulty === 'EASY') return { backgroundColor: 'var(--admin-success-soft)', color: 'var(--admin-success)' };
+    if (difficulty === 'HARD') return { backgroundColor: 'var(--admin-error-soft)', color: 'var(--admin-error)' };
+    return { backgroundColor: 'var(--admin-warning-soft)', color: 'var(--admin-warning)' };
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <PageHeader
+        title="Quiz Management & Review"
+        description="Grounded assessment generation, Bloom's taxonomy validation & student mastery engine."
+        actions={
+          <button type="button" className="adm-btn adm-btn-primary" onClick={() => setShowGenModal(true)}>
+            <Sparkles size={15} />
+            Generate New Quiz
           </button>
-        </div>
-      )}
-      {successMsg && (
-        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl flex items-center justify-between">
-          <span>{successMsg}</span>
-          <button onClick={() => setSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-700 font-bold ml-4">
-            ×
-          </button>
-        </div>
-      )}
+        }
+      />
+
+      <MessageBanner message={bannerMessage} onDismiss={() => { setSuccessMsg(null); setErrorMsg(null); }} />
 
       {/* Main Grid: Quiz List & Review Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Sidebar: Quiz List */}
-        <div className="lg:col-span-4 space-y-4">
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-3">
-            <input
-              type="text"
-              placeholder="Search quiz, topic, chapter..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-3.5 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <div className="flex gap-1.5 overflow-x-auto pb-1 text-xs">
-              {['ALL', 'DRAFT', 'REVIEW', 'PUBLISHED', 'ARCHIVED'].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setFilterStatus(st)}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                    filterStatus === st
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start' }}>
+        {/* Left: Quiz List */}
+        <div style={{ flex: '1 1 300px', minWidth: '280px', maxWidth: '420px', display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+          <SurfacePanel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <SearchBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="Search quiz, topic, chapter..."
+              />
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {FILTER_STATUSES.map((st) => {
+                  const active = filterStatus === st;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setFilterStatus(st)}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        border: `1px solid ${active ? 'var(--admin-primary)' : 'var(--admin-border)'}`,
+                        backgroundColor: active ? 'var(--admin-primary-soft)' : 'transparent',
+                        color: active ? 'var(--admin-primary)' : 'var(--admin-text-secondary)',
+                      }}
+                    >
+                      {st}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          </SurfacePanel>
 
-          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/60 max-h-[700px] overflow-y-auto">
-            {loading && quizzes.length === 0 ? (
-              <div className="p-8 text-center text-gray-400">Loading quizzes...</div>
-            ) : filteredQuizzes.length === 0 ? (
-              <div className="p-8 text-center text-gray-400">No quizzes match filter.</div>
-            ) : (
-              filteredQuizzes.map((q) => {
-                const isSelected = selectedQuiz?.id === q.id;
-                return (
-                  <button
-                    key={q.id}
-                    onClick={() => handleSelectQuiz(q)}
-                    className={`w-full text-left p-4 transition-all ${
-                      isSelected
-                        ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-l-4 border-indigo-600'
-                        : 'hover:bg-gray-50 dark:hover:bg-gray-750'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-                        {q.title}
-                      </span>
-                      <span
-                        className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                          q.status === 'PUBLISHED'
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                            : q.status === 'REVIEW'
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                            : q.status === 'ARCHIVED'
-                            ? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-                            : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                        }`}
-                      >
-                        {q.status}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                      <span>{q.topic_title || 'Topic Quiz'}</span>
-                      <span>•</span>
-                      <span>{q.question_count} Questions</span>
-                      {q.is_adaptive && (
-                        <span className="text-violet-600 dark:text-violet-400 font-semibold text-[10px] bg-violet-50 dark:bg-violet-950 px-1.5 py-0.2 rounded">
-                          Adaptive #{q.attempt_number}
+          <SurfacePanel style={{ padding: '6px' }}>
+            <div style={{ maxHeight: '620px', overflowY: 'auto' }}>
+              {loading && quizzes.length === 0 ? (
+                <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: '13px', color: 'var(--admin-text-secondary)' }}>
+                  Loading quizzes...
+                </div>
+              ) : filteredQuizzes.length === 0 ? (
+                <EmptyState
+                  icon={<FileQuestion size={20} />}
+                  title="No quizzes match filter"
+                  description="Adjust the search or status filter to see more quizzes."
+                />
+              ) : (
+                filteredQuizzes.map((q) => {
+                  const isSelected = selectedQuiz?.id === q.id;
+                  return (
+                    <button
+                      key={q.id}
+                      type="button"
+                      onClick={() => handleSelectQuiz(q)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '12px 14px',
+                        border: 'none',
+                        borderLeft: `3px solid ${isSelected ? 'var(--admin-primary)' : 'transparent'}`,
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: isSelected ? 'var(--admin-primary-soft)' : 'transparent',
+                        cursor: 'pointer',
+                        fontFamily: 'var(--font-family)',
+                      }}
+                      onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--admin-surface-raised)'; }}
+                      onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--admin-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {q.title}
                         </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
+                        <StatusBadge status={q.status} />
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span>{q.topic_title || 'Topic Quiz'}</span>
+                        <span>•</span>
+                        <span>{q.question_count} Questions</span>
+                        {q.is_adaptive && (
+                          <span
+                            className="adm-badge"
+                            style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }}
+                          >
+                            Adaptive #{q.attempt_number}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </SurfacePanel>
         </div>
 
-        {/* Right Panel: Selected Quiz Review & Questions */}
-        <div className="lg:col-span-8 space-y-6">
+        {/* Right: Selected Quiz Review & Questions */}
+        <div style={{ flex: '2 1 520px', minWidth: '320px', width: '100%' }}>
           {selectedQuiz ? (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-6 space-y-6">
+            <SurfacePanel>
               {/* Quiz Summary Card */}
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-gray-100 dark:border-gray-700">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '14px',
+                  paddingBottom: '18px',
+                  borderBottom: '1px solid var(--admin-border)',
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)', margin: 0 }}>
                       {selectedQuiz.title}
                     </h2>
+                    <StatusBadge status={selectedQuiz.status} />
                     {selectedQuiz.is_adaptive && (
-                      <span className="px-2.5 py-0.5 bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 text-xs font-semibold rounded-full">
+                      <span
+                        className="adm-badge"
+                        style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }}
+                      >
                         Adaptive Attempt #{selectedQuiz.attempt_number}
                       </span>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '8px' }}>
                     {selectedQuiz.subject_name && (
-                      <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                      <span className="adm-badge" style={{ backgroundColor: 'var(--admin-surface-raised)', color: 'var(--admin-text-secondary)' }}>
                         Subject: {selectedQuiz.subject_name}
                       </span>
                     )}
                     {selectedQuiz.chapter_title && (
-                      <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                      <span className="adm-badge" style={{ backgroundColor: 'var(--admin-surface-raised)', color: 'var(--admin-text-secondary)' }}>
                         Chapter: {selectedQuiz.chapter_title}
                       </span>
                     )}
                     {selectedQuiz.topic_title && (
-                      <span className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded">
+                      <span className="adm-badge" style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }}>
                         Topic: {selectedQuiz.topic_title}
                       </span>
                     )}
-                    <span>Passing Score: <strong>{selectedQuiz.passing_score}%</strong></span>
-                    <span>Engine: <code>{selectedQuiz.generation_engine || 'deterministic'}</code></span>
+                    <span>Passing Score: <strong style={{ color: 'var(--admin-text)' }}>{selectedQuiz.passing_score}%</strong></span>
+                    <span>Engine: <code style={{ fontSize: '11px', color: 'var(--admin-text)' }}>{selectedQuiz.generation_engine || 'deterministic'}</code></span>
                   </div>
                 </div>
 
-                {/* Status Badges & Lifecycle Actions */}
-                <div className="flex flex-wrap items-center gap-2">
+                {/* Lifecycle Actions */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {selectedQuiz.status === 'DRAFT' && (
                     <button
+                      type="button"
+                      className="adm-btn adm-btn-primary adm-btn-sm"
                       onClick={handleApprove}
                       disabled={actionLoading}
-                      className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-medium transition"
                     >
+                      <Check size={14} />
                       Approve for Review
                     </button>
                   )}
                   {selectedQuiz.status === 'REVIEW' && (
                     <>
                       <button
+                        type="button"
+                        className="adm-btn adm-btn-primary adm-btn-sm"
                         onClick={handlePublish}
                         disabled={actionLoading}
-                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-medium transition"
                       >
+                        <Send size={14} />
                         Publish to Students
                       </button>
                       <button
-                        onClick={handleRegenerateQuiz}
+                        type="button"
+                        className="adm-btn adm-btn-secondary adm-btn-sm"
+                        onClick={() => setPendingConfirm({ type: 'regenerateQuiz' })}
                         disabled={actionLoading}
-                        className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl text-xs font-medium transition"
                       >
+                        <RefreshCw size={14} />
                         Regenerate All
                       </button>
                     </>
                   )}
                   {selectedQuiz.status === 'PUBLISHED' && (
                     <button
-                      onClick={handleArchive}
+                      type="button"
+                      className="adm-btn adm-btn-secondary adm-btn-sm"
+                      onClick={() => setPendingConfirm({ type: 'archive' })}
                       disabled={actionLoading}
-                      className="px-3.5 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-xl text-xs font-medium transition"
                     >
+                      <Archive size={14} />
                       Archive
                     </button>
                   )}
@@ -531,22 +579,24 @@ export const AdminQuizzes: React.FC = () => {
               </div>
 
               {/* Questions Section */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <span>Questions ({selectedQuiz.questions?.length || 0})</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                  <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)', margin: 0 }}>
+                    Questions ({selectedQuiz.questions?.length || 0})
                   </h3>
-                  <span className="text-xs text-gray-500">
+                  <span style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
                     Bloom's Taxonomy Grounded • Distractor Quality Checked
                   </span>
                 </div>
 
                 {(!selectedQuiz.questions || selectedQuiz.questions.length === 0) ? (
-                  <div className="p-8 text-center text-gray-400 bg-gray-50 dark:bg-gray-900 rounded-xl">
-                    No questions generated yet.
-                  </div>
+                  <EmptyState
+                    icon={<FileQuestion size={20} />}
+                    title="No questions generated yet"
+                    description="Generate the quiz to synthesize Bloom-aligned grounded questions."
+                  />
                 ) : (
-                  <div className="space-y-4">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     {selectedQuiz.questions.map((q, idx) => {
                       const options = q.options || [];
                       const correctKey = String(q.correct_answer || '');
@@ -554,45 +604,58 @@ export const AdminQuizzes: React.FC = () => {
                       return (
                         <div
                           key={q.id}
-                          className="p-5 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200/80 dark:border-gray-700 space-y-3"
+                          style={{
+                            padding: '16px',
+                            backgroundColor: 'var(--admin-bg)',
+                            border: '1px solid var(--admin-border)',
+                            borderRadius: 'var(--radius-lg)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '12px',
+                          }}
                         >
                           {/* Question Header */}
-                          <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
-                            <div className="flex items-start gap-3">
-                              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs mt-0.5">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', minWidth: 0 }}>
+                              <span
+                                style={{
+                                  flexShrink: 0,
+                                  width: '24px',
+                                  height: '24px',
+                                  borderRadius: '50%',
+                                  backgroundColor: 'var(--admin-primary-soft)',
+                                  color: 'var(--admin-primary)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 700,
+                                  fontSize: '12px',
+                                  marginTop: '2px',
+                                }}
+                              >
                                 {idx + 1}
                               </span>
-                              <div>
-                                <p className="font-medium text-gray-900 dark:text-gray-100 text-sm leading-relaxed">
+                              <div style={{ minWidth: 0 }}>
+                                <p style={{ fontWeight: 500, color: 'var(--admin-text)', fontSize: '13px', lineHeight: '20px', margin: 0 }}>
                                   {q.question_text || q.stem}
                                 </p>
-                                <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                                  {/* Difficulty Badge */}
-                                  <span
-                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                      q.difficulty === 'EASY'
-                                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
-                                        : q.difficulty === 'HARD'
-                                        ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
-                                        : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                                    }`}
-                                  >
+                                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                                  <span className="adm-badge" style={difficultyBadgeStyle(q.difficulty)}>
                                     {q.difficulty}
                                   </span>
-
-                                  {/* Bloom's Level */}
-                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">
+                                  <span
+                                    className="adm-badge"
+                                    style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }}
+                                  >
                                     Bloom: {q.bloom_level || 'UNDERSTAND'}
                                   </span>
-
                                   {q.source_reference && (
-                                    <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                                    <span style={{ fontSize: '10px', color: 'var(--admin-text-secondary)' }}>
                                       Ref: {q.source_reference}
                                     </span>
                                   )}
-
                                   {q.weak_concept && (
-                                    <span className="text-[10px] text-violet-600 dark:text-violet-400 font-medium">
+                                    <span style={{ fontSize: '10px', color: 'var(--admin-text-secondary)', fontWeight: 500 }}>
                                       Concept: {q.weak_concept}
                                     </span>
                                   )}
@@ -601,36 +664,43 @@ export const AdminQuizzes: React.FC = () => {
                             </div>
 
                             {/* Actions per question */}
-                            <div className="flex items-center gap-1.5 ml-auto">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto', flexShrink: 0 }}>
                               <button
+                                type="button"
                                 onClick={() => openEditModal(q)}
                                 disabled={actionLoading}
                                 title="Edit Question"
-                                className="p-1.5 text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 text-xs font-medium"
+                                className="adm-btn adm-btn-ghost adm-btn-sm"
                               >
-                                ✏️ Edit
+                                <Pencil size={13} />
+                                Edit
                               </button>
                               <button
+                                type="button"
                                 onClick={() => handleRegenerateQuestion(q.id)}
                                 disabled={actionLoading}
                                 title="Regenerate this question"
-                                className="p-1.5 text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 text-xs font-medium"
+                                className="adm-btn adm-btn-ghost adm-btn-sm"
                               >
-                                🔄 Regen
+                                <RefreshCw size={13} />
+                                Regen
                               </button>
                               <button
-                                onClick={() => handleDeleteQuestion(q.id)}
+                                type="button"
+                                onClick={() => setPendingConfirm({ type: 'deleteQuestion', questionId: q.id })}
                                 disabled={actionLoading}
                                 title="Delete question"
-                                className="p-1.5 text-gray-500 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 text-xs font-medium"
+                                aria-label="Delete question"
+                                className="adm-btn adm-btn-ghost adm-btn-sm"
+                                style={{ color: 'var(--admin-error)' }}
                               >
-                                🗑️
+                                <Trash2 size={13} />
                               </button>
                             </div>
                           </div>
 
                           {/* Options Grid */}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-9">
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '8px', paddingLeft: '34px' }}>
                             {options.map((opt: any, optIdx: number) => {
                               const letter = String.fromCharCode(65 + optIdx);
                               const optText = typeof opt === 'object' && opt !== null ? opt.text : String(opt);
@@ -643,23 +713,43 @@ export const AdminQuizzes: React.FC = () => {
                               return (
                                 <div
                                   key={optIdx}
-                                  className={`p-2.5 rounded-lg text-xs flex items-center gap-2 border ${
-                                    isCorrect
-                                      ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 font-medium'
-                                      : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
-                                  }`}
+                                  style={{
+                                    padding: '10px',
+                                    borderRadius: 'var(--radius-md)',
+                                    fontSize: '12px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    border: isCorrect ? '1px solid #BBF7D0' : '1px solid var(--admin-border)',
+                                    backgroundColor: isCorrect ? 'var(--admin-success-soft)' : 'var(--admin-surface)',
+                                    color: 'var(--admin-text)',
+                                    fontWeight: isCorrect ? 600 : 400,
+                                  }}
                                 >
                                   <span
-                                    className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] ${
-                                      isCorrect
-                                        ? 'bg-emerald-600 text-white'
-                                        : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                                    }`}
+                                    style={{
+                                      width: '20px',
+                                      height: '20px',
+                                      borderRadius: '50%',
+                                      flexShrink: 0,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      fontWeight: 700,
+                                      fontSize: '10px',
+                                      backgroundColor: isCorrect ? 'var(--admin-success)' : 'var(--admin-surface-raised)',
+                                      color: isCorrect ? '#FFFFFF' : 'var(--admin-text-secondary)',
+                                    }}
                                   >
                                     {letter}
                                   </span>
-                                  <span className="flex-1">{optText}</span>
-                                  {isCorrect && <span className="text-emerald-600 text-xs font-bold">✓ Correct</span>}
+                                  <span style={{ flex: 1, minWidth: 0 }}>{optText}</span>
+                                  {isCorrect && (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--admin-success)', fontSize: '11px', fontWeight: 700 }}>
+                                      <Check size={12} strokeWidth={3} />
+                                      Correct
+                                    </span>
+                                  )}
                                 </div>
                               );
                             })}
@@ -667,9 +757,25 @@ export const AdminQuizzes: React.FC = () => {
 
                           {/* Explanation Box */}
                           {q.explanation && (
-                            <div className="ml-9 p-3 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-lg border border-indigo-100 dark:border-indigo-900/40 text-xs text-indigo-900 dark:text-indigo-200">
-                              <span className="font-semibold">💡 Explanation: </span>
-                              {q.explanation}
+                            <div
+                              style={{
+                                marginLeft: '34px',
+                                padding: '10px 12px',
+                                backgroundColor: 'var(--admin-primary-soft)',
+                                border: '1px solid var(--admin-border)',
+                                borderRadius: 'var(--radius-md)',
+                                fontSize: '12px',
+                                color: 'var(--admin-text)',
+                                display: 'flex',
+                                gap: '8px',
+                                alignItems: 'flex-start',
+                              }}
+                            >
+                              <Lightbulb size={14} style={{ color: 'var(--admin-primary)', flexShrink: 0, marginTop: '2px' }} />
+                              <span>
+                                <strong>Explanation: </strong>
+                                {q.explanation}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -678,280 +784,295 @@ export const AdminQuizzes: React.FC = () => {
                   </div>
                 )}
               </div>
-            </div>
+            </SurfacePanel>
           ) : (
-            <div className="p-16 text-center text-gray-400 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700">
-              Select a quiz to review its questions and lifecycle status.
-            </div>
+            <SurfacePanel>
+              <EmptyState
+                icon={<FileQuestion size={20} />}
+                title="Select a quiz"
+                description="Select a quiz to review its questions and lifecycle status."
+              />
+            </SurfacePanel>
           )}
         </div>
       </div>
 
       {/* Generate Quiz Modal */}
-      {showGenModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-gray-100 dark:border-gray-700">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <span>✨</span> Generate Grounded Quiz
-            </h3>
-            <p className="text-xs text-gray-500">
-              Extracts approved video plans, educational scripts, and curriculum textbook content to synthesize Bloom-aligned MCQ questions.
-            </p>
+      <Modal
+        open={showGenModal}
+        onClose={() => setShowGenModal(false)}
+        title="Generate Grounded Quiz"
+        subtitle="Extracts approved video plans, educational scripts, and curriculum textbook content to synthesize Bloom-aligned MCQ questions."
+        maxWidth={560}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setShowGenModal(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="adm-btn adm-btn-primary"
+              onClick={handleGenerateQuiz}
+              disabled={actionLoading || !selectedTopicId}
+            >
+              {actionLoading ? 'Generating Questions...' : 'Start Generation'}
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label className="adm-label" htmlFor="gen-subject">Subject *</label>
+            <select
+              id="gen-subject"
+              className="adm-select"
+              value={selectedSubjectId}
+              onChange={(e) => handleSubjectChange(e.target.value ? Number(e.target.value) : '')}
+            >
+              <option value="">-- Select Subject --</option>
+              {subjects.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Subject *
-                </label>
-                <select
-                  value={selectedSubjectId}
-                  onChange={(e) => handleSubjectChange(e.target.value ? Number(e.target.value) : '')}
-                  className="w-full text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl"
-                >
-                  <option value="">-- Select Subject --</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <div>
+            <label className="adm-label" htmlFor="gen-chapter">Chapter *</label>
+            <select
+              id="gen-chapter"
+              className="adm-select"
+              value={selectedChapterId}
+              onChange={(e) => handleChapterChange(e.target.value ? Number(e.target.value) : '')}
+              disabled={!selectedSubjectId}
+            >
+              <option value="">-- Select Chapter --</option>
+              {chapters.map((ch) => (
+                <option key={ch.id} value={ch.id}>
+                  {ch.title}
+                </option>
+              ))}
+            </select>
+          </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Chapter *
-                </label>
-                <select
-                  value={selectedChapterId}
-                  onChange={(e) => handleChapterChange(e.target.value ? Number(e.target.value) : '')}
-                  disabled={!selectedSubjectId}
-                  className="w-full text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl disabled:opacity-50"
-                >
-                  <option value="">-- Select Chapter --</option>
-                  {chapters.map((ch) => (
-                    <option key={ch.id} value={ch.id}>
-                      {ch.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <div>
+            <label className="adm-label" htmlFor="gen-topic">Topic *</label>
+            <select
+              id="gen-topic"
+              className="adm-select"
+              value={selectedTopicId}
+              onChange={(e) => handleTopicChange(e.target.value ? Number(e.target.value) : '')}
+              disabled={!selectedChapterId}
+            >
+              <option value="">-- Select Topic --</option>
+              {topics.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Topic *
-                </label>
-                <select
-                  value={selectedTopicId}
-                  onChange={(e) => handleTopicChange(e.target.value ? Number(e.target.value) : '')}
-                  disabled={!selectedChapterId}
-                  className="w-full text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl disabled:opacity-50"
-                >
-                  <option value="">-- Select Topic --</option>
-                  {topics.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <div>
+            <label className="adm-label" htmlFor="gen-subtopic">Subtopic (Optional)</label>
+            <select
+              id="gen-subtopic"
+              className="adm-select"
+              value={selectedSubtopicId}
+              onChange={(e) => setSelectedSubtopicId(e.target.value ? Number(e.target.value) : '')}
+              disabled={!selectedTopicId || subtopics.length === 0}
+            >
+              <option value="">-- Entire Topic --</option>
+              {subtopics.map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.title}
+                </option>
+              ))}
+            </select>
+          </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Subtopic (Optional)
-                </label>
-                <select
-                  value={selectedSubtopicId}
-                  onChange={(e) => setSelectedSubtopicId(e.target.value ? Number(e.target.value) : '')}
-                  disabled={!selectedTopicId || subtopics.length === 0}
-                  className="w-full text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl disabled:opacity-50"
-                >
-                  <option value="">-- Entire Topic --</option>
-                  {subtopics.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Question Count
-                  </label>
-                  <select
-                    value={genQuestionCount}
-                    onChange={(e) => setGenQuestionCount(Number(e.target.value))}
-                    className="w-full text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl"
-                  >
-                    <option value={5}>5 Questions</option>
-                    <option value={10}>10 Questions (Default)</option>
-                    <option value={15}>15 Questions</option>
-                    <option value={20}>20 Questions</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Passing Score (%)
-                  </label>
-                  <input
-                    type="number"
-                    min={50}
-                    max={100}
-                    value={genPassingScore}
-                    onChange={(e) => setGenPassingScore(Number(e.target.value))}
-                    className="w-full text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Engine Abstraction
-                </label>
-                <select
-                  value={genEngine}
-                  onChange={(e) => setGenEngine(e.target.value)}
-                  className="w-full text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl"
-                >
-                  <option value="deterministic">Deterministic (Offline Grounded / Fast)</option>
-                  <option value="llm">Pluggable LLM (OpenAI / Gemini)</option>
-                </select>
-              </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+            <div>
+              <label className="adm-label" htmlFor="gen-count">Question Count</label>
+              <select
+                id="gen-count"
+                className="adm-select"
+                value={genQuestionCount}
+                onChange={(e) => setGenQuestionCount(Number(e.target.value))}
+              >
+                <option value={5}>5 Questions</option>
+                <option value={10}>10 Questions (Default)</option>
+                <option value={15}>15 Questions</option>
+                <option value={20}>20 Questions</option>
+              </select>
             </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-700">
-              <button
-                onClick={() => setShowGenModal(false)}
-                className="px-4 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleGenerateQuiz}
-                disabled={actionLoading || !selectedTopicId}
-                className="px-5 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl disabled:opacity-50 transition shadow-sm"
-              >
-                {actionLoading ? 'Generating Questions...' : 'Start Generation'}
-              </button>
+            <div>
+              <label className="adm-label" htmlFor="gen-passing">Passing Score (%)</label>
+              <input
+                id="gen-passing"
+                className="adm-input"
+                type="number"
+                min={50}
+                max={100}
+                value={genPassingScore}
+                onChange={(e) => setGenPassingScore(Number(e.target.value))}
+              />
             </div>
           </div>
+
+          <div>
+            <label className="adm-label" htmlFor="gen-engine">Engine Abstraction</label>
+            <select
+              id="gen-engine"
+              className="adm-select"
+              value={genEngine}
+              onChange={(e) => setGenEngine(e.target.value)}
+            >
+              <option value="deterministic">Deterministic (Offline Grounded / Fast)</option>
+              <option value="llm">Pluggable LLM (OpenAI / Gemini)</option>
+            </select>
+          </div>
         </div>
-      )}
+      </Modal>
 
       {/* Edit Question Modal */}
-      {showEditQModal && editingQuestion && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-xl border border-gray-100 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Edit Question</h3>
+      <Modal
+        open={showEditQModal && !!editingQuestion}
+        onClose={() => setShowEditQModal(false)}
+        title="Edit Question"
+        maxWidth={640}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setShowEditQModal(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="adm-btn adm-btn-primary"
+              onClick={handleSaveQuestion}
+              disabled={actionLoading}
+            >
+              Save Changes
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label className="adm-label" htmlFor="q-text">Question Text *</label>
+            <textarea
+              id="q-text"
+              className="adm-textarea"
+              rows={2}
+              value={qText}
+              onChange={(e) => setQText(e.target.value)}
+            />
+          </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Question Text *
-                </label>
-                <textarea
-                  rows={2}
-                  value={qText}
-                  onChange={(e) => setQText(e.target.value)}
-                  className="w-full text-sm p-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                  Options & Correct Answer *
-                </label>
-                {qOptions.map((opt, i) => {
-                  const letter = String.fromCharCode(65 + i);
-                  return (
-                    <div key={i} className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="correctAnswer"
-                        checked={qCorrect === String(i) || qCorrect === letter}
-                        onChange={() => setQCorrect(String(i))}
-                        className="text-indigo-600"
-                      />
-                      <span className="w-5 font-bold text-xs text-gray-500">{letter}.</span>
-                      <input
-                        type="text"
-                        value={opt}
-                        onChange={(e) => {
-                          const updated = [...qOptions];
-                          updated[i] = e.target.value;
-                          setQOptions(updated);
-                        }}
-                        className="flex-1 text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Difficulty
-                  </label>
-                  <select
-                    value={qDifficulty}
-                    onChange={(e) => setQDifficulty(e.target.value)}
-                    className="w-full text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl"
-                  >
-                    <option value="EASY">EASY</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="HARD">HARD</option>
-                  </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label className="adm-label">Options & Correct Answer *</label>
+            {qOptions.map((opt, i) => {
+              const letter = String.fromCharCode(65 + i);
+              return (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="radio"
+                    name="correctAnswer"
+                    checked={qCorrect === String(i) || qCorrect === letter}
+                    onChange={() => setQCorrect(String(i))}
+                    aria-label={`Mark option ${letter} as correct`}
+                    style={{ accentColor: 'var(--admin-primary)' }}
+                  />
+                  <span style={{ width: '20px', fontWeight: 700, fontSize: '12px', color: 'var(--admin-text-secondary)', flexShrink: 0 }}>
+                    {letter}.
+                  </span>
+                  <input
+                    className="adm-input"
+                    type="text"
+                    value={opt}
+                    onChange={(e) => {
+                      const updated = [...qOptions];
+                      updated[i] = e.target.value;
+                      setQOptions(updated);
+                    }}
+                  />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Bloom Level
-                  </label>
-                  <select
-                    value={qBloom}
-                    onChange={(e) => setQBloom(e.target.value)}
-                    className="w-full text-sm p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl"
-                  >
-                    <option value="REMEMBER">REMEMBER</option>
-                    <option value="UNDERSTAND">UNDERSTAND</option>
-                    <option value="APPLY">APPLY</option>
-                    <option value="ANALYZE">ANALYZE</option>
-                  </select>
-                </div>
-              </div>
+              );
+            })}
+          </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Explanation *
-                </label>
-                <textarea
-                  rows={2}
-                  value={qExplanation}
-                  onChange={(e) => setQExplanation(e.target.value)}
-                  className="w-full text-sm p-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl"
-                />
-              </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+            <div>
+              <label className="adm-label" htmlFor="q-difficulty">Difficulty</label>
+              <select
+                id="q-difficulty"
+                className="adm-select"
+                value={qDifficulty}
+                onChange={(e) => setQDifficulty(e.target.value)}
+              >
+                <option value="EASY">EASY</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="HARD">HARD</option>
+              </select>
             </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-700">
-              <button
-                onClick={() => setShowEditQModal(false)}
-                className="px-4 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition"
+            <div>
+              <label className="adm-label" htmlFor="q-bloom">Bloom Level</label>
+              <select
+                id="q-bloom"
+                className="adm-select"
+                value={qBloom}
+                onChange={(e) => setQBloom(e.target.value)}
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveQuestion}
-                disabled={actionLoading}
-                className="px-5 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition shadow-sm"
-              >
-                Save Changes
-              </button>
+                <option value="REMEMBER">REMEMBER</option>
+                <option value="UNDERSTAND">UNDERSTAND</option>
+                <option value="APPLY">APPLY</option>
+                <option value="ANALYZE">ANALYZE</option>
+              </select>
             </div>
           </div>
+
+          <div>
+            <label className="adm-label" htmlFor="q-explanation">Explanation *</label>
+            <textarea
+              id="q-explanation"
+              className="adm-textarea"
+              rows={2}
+              value={qExplanation}
+              onChange={(e) => setQExplanation(e.target.value)}
+            />
+          </div>
         </div>
-      )}
+      </Modal>
+
+      {/* Confirmation dialogs for destructive lifecycle actions */}
+      <ConfirmDialog
+        open={pendingConfirm?.type === 'archive'}
+        title="Archive Quiz"
+        message="Are you sure you want to archive this quiz? Students will no longer see it."
+        confirmLabel="Archive Quiz"
+        danger
+        onConfirm={handleConfirmPending}
+        onCancel={() => setPendingConfirm(null)}
+      />
+      <ConfirmDialog
+        open={pendingConfirm?.type === 'regenerateQuiz'}
+        title="Regenerate Quiz"
+        message="Regenerate all questions in this quiz? Manual edits will be replaced."
+        confirmLabel="Regenerate All"
+        danger
+        onConfirm={handleConfirmPending}
+        onCancel={() => setPendingConfirm(null)}
+      />
+      <ConfirmDialog
+        open={pendingConfirm?.type === 'deleteQuestion'}
+        title="Delete Question"
+        message="Are you sure you want to delete this question?"
+        confirmLabel="Delete Question"
+        danger
+        onConfirm={handleConfirmPending}
+        onCancel={() => setPendingConfirm(null)}
+      />
     </div>
   );
 };

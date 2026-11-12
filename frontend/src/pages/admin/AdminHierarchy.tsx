@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { ChevronDown, ChevronUp, BookText, ListTree } from 'lucide-react';
 import { SurfacePanel } from '../../components/SurfacePanel';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { LoadingState } from '../../components/admin/LoadingState';
+import { ErrorState } from '../../components/admin/ErrorState';
+import { EmptyState } from '../../components/admin/EmptyState';
 import { api } from '../../lib/api';
 import { Textbook, TextbookHierarchy, Chapter, Topic } from '../../lib/types';
 
@@ -9,10 +14,14 @@ export const AdminHierarchy: React.FC = () => {
   const [hierarchy, setHierarchy] = useState<TextbookHierarchy | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [expandedChapters, setExpandedChapters] = useState<Record<number, boolean>>({});
+  const [loadingTextbooks, setLoadingTextbooks] = useState(false);
+  const [loadingHierarchy, setLoadingHierarchy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadTextbooks = async () => {
       try {
+        setLoadingTextbooks(true);
         const list = await api.listTextbooks();
         setTextbooks(list);
         if (list.length > 0) {
@@ -20,6 +29,9 @@ export const AdminHierarchy: React.FC = () => {
         }
       } catch (err) {
         console.error(err);
+        setError('Failed to load textbooks. Please try again.');
+      } finally {
+        setLoadingTextbooks(false);
       }
     };
     loadTextbooks();
@@ -29,6 +41,7 @@ export const AdminHierarchy: React.FC = () => {
     if (selectedTextbookId) {
       const loadHierarchy = async () => {
         try {
+          setLoadingHierarchy(true);
           const data = await api.getTextbookHierarchy(selectedTextbookId);
           setHierarchy(data);
           const initialExpand: Record<number, boolean> = {};
@@ -39,6 +52,9 @@ export const AdminHierarchy: React.FC = () => {
           }
         } catch (err) {
           console.error(err);
+          setError('Failed to load hierarchy. Please try again.');
+        } finally {
+          setLoadingHierarchy(false);
         }
       };
       loadHierarchy();
@@ -51,28 +67,24 @@ export const AdminHierarchy: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <div>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#F8FAFC' }}>Extracted Hierarchy</h1>
-        <p style={{ fontSize: '14px', color: '#94A3B8', marginTop: '4px' }}>
-          Inspect hierarchical decomposition: Chapters → Topics → ~5.5-Minute Subtopics.
-        </p>
-      </div>
+      <PageHeader
+        title="Extracted Hierarchy"
+        description="Inspect hierarchical decomposition: Chapters → Topics → ~5.5-Minute Subtopics."
+      />
+
+      {error && <ErrorState message={error} onRetry={() => setError(null)} />}
 
       <SurfacePanel>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <label style={{ fontSize: '13px', fontWeight: 600, color: '#94A3B8' }}>Select Ingested Textbook:</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <label className="adm-label" htmlFor="hierarchy-textbook-select" style={{ marginBottom: 0 }}>
+            Select Ingested Textbook:
+          </label>
           <select
+            id="hierarchy-textbook-select"
+            className="adm-select"
             value={selectedTextbookId || ''}
             onChange={(e) => setSelectedTextbookId(Number(e.target.value))}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '8px',
-              backgroundColor: '#0F172A',
-              border: '1px solid #334155',
-              color: '#F8FAFC',
-              fontSize: '14px',
-              minWidth: '280px',
-            }}
+            style={{ maxWidth: '320px' }}
           >
             {textbooks.map((tb) => (
               <option key={tb.id} value={tb.id}>
@@ -83,35 +95,47 @@ export const AdminHierarchy: React.FC = () => {
         </div>
       </SurfacePanel>
 
-      {hierarchy && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+      {loadingTextbooks || loadingHierarchy ? (
+        <SurfacePanel>
+          <LoadingState label="Loading hierarchy…" rows={6} />
+        </SurfacePanel>
+      ) : textbooks.length === 0 ? (
+        <SurfacePanel>
+          <EmptyState
+            title="No textbooks yet"
+            description="Ingest a textbook first to inspect its extracted curriculum hierarchy."
+            icon={<BookText size={20} />}
+          />
+        </SurfacePanel>
+      ) : hierarchy && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '20px' }}>
           {/* Left: Tree View */}
           <SurfacePanel>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#F8FAFC' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--admin-text)' }}>
                 Structure Tree ({hierarchy.chapters.length} Chapters)
               </h2>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {hierarchy.chapters.map((chapter) => (
-                <div key={chapter.id} style={{ border: '1px solid #334155', borderRadius: '8px', overflow: 'hidden' }}>
+                <div key={chapter.id} style={{ border: '1px solid var(--admin-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                   <div
                     onClick={() => toggleChapter(chapter.id)}
                     style={{
                       padding: '12px 16px',
-                      backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                      backgroundColor: 'var(--admin-surface-raised)',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       cursor: 'pointer',
                       fontWeight: 600,
-                      color: '#F8FAFC',
+                      color: 'var(--admin-text)',
                     }}
                   >
-                    <span>{chapter.title}</span>
-                    <span style={{ fontSize: '12px', color: '#94A3B8' }}>
-                      {expandedChapters[chapter.id] ? '▲' : '▼'}
+                    <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{chapter.title}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', color: 'var(--admin-text-secondary)', flexShrink: 0 }}>
+                      {expandedChapters[chapter.id] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </span>
                   </div>
 
@@ -125,25 +149,44 @@ export const AdminHierarchy: React.FC = () => {
                             onClick={() => setSelectedTopic(topic)}
                             style={{
                               padding: '10px 14px',
-                              borderRadius: '6px',
-                              backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
-                              border: isSelected ? '1px solid #6366F1' : '1px solid transparent',
+                              borderRadius: 'var(--radius-sm)',
+                              backgroundColor: isSelected ? 'var(--admin-primary-soft)' : 'transparent',
+                              border: isSelected ? '1px solid var(--admin-primary)' : '1px solid transparent',
                               display: 'flex',
                               justifyContent: 'space-between',
                               alignItems: 'center',
+                              gap: '10px',
                               cursor: 'pointer',
                             }}
                           >
-                            <span style={{ color: isSelected ? '#F8FAFC' : '#CBD5E1', fontSize: '13px' }}>
-                              • {topic.title}
-                            </span>
                             <span
                               style={{
-                                fontSize: '11px',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: '#334155',
-                                color: '#94A3B8',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                minWidth: 0,
+                                color: isSelected ? 'var(--admin-primary)' : 'var(--admin-text)',
+                                fontSize: '13px',
+                                fontWeight: isSelected ? 600 : 400,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: '6px',
+                                  height: '6px',
+                                  borderRadius: '50%',
+                                  backgroundColor: isSelected ? 'var(--admin-primary)' : 'var(--admin-text-secondary)',
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <span style={{ overflowWrap: 'anywhere' }}>{topic.title}</span>
+                            </span>
+                            <span
+                              className="adm-badge"
+                              style={{
+                                backgroundColor: 'var(--admin-surface-raised)',
+                                color: 'var(--admin-text-secondary)',
+                                flexShrink: 0,
                               }}
                             >
                               {topic.subtopics.length} units (~5.5 min)
@@ -160,21 +203,23 @@ export const AdminHierarchy: React.FC = () => {
 
           {/* Right: Subtopics & Unit Detail Pane */}
           <SurfacePanel>
-            <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#F8FAFC', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '16px' }}>
               Topic & Subtopic Segmentation
             </h2>
 
             {selectedTopic ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ padding: '14px', borderRadius: '8px', backgroundColor: 'rgba(15, 23, 42, 0.6)', border: '1px solid #334155' }}>
-                  <div style={{ fontSize: '12px', color: '#94A3B8' }}>SELECTED TOPIC</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#F8FAFC', marginTop: '4px' }}>
+                <div style={{ padding: '14px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--admin-surface-raised)', border: '1px solid var(--admin-border)' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--admin-text-secondary)' }}>
+                    Selected Topic
+                  </div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--admin-text)', marginTop: '4px' }}>
                     {selectedTopic.title}
                   </div>
                 </div>
 
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#94A3B8', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '8px' }}>
                     Segmented 5-6 Min Video Units:
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -183,31 +228,29 @@ export const AdminHierarchy: React.FC = () => {
                         key={sub.id}
                         style={{
                           padding: '12px 14px',
-                          borderRadius: '8px',
-                          border: '1px solid #334155',
-                          backgroundColor: '#0F172A',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--admin-border)',
+                          backgroundColor: 'var(--admin-bg)',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
+                          gap: '10px',
                         }}
                       >
-                        <div>
-                          <div style={{ fontSize: '13px', fontWeight: 600, color: '#F8FAFC' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--admin-text)', overflowWrap: 'anywhere' }}>
                             {idx + 1}. {sub.title}
                           </div>
-                          <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>
+                          <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
                             Segment Order: #{sub.order}
                           </div>
                         </div>
                         <span
+                          className="adm-badge"
                           style={{
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            padding: '4px 8px',
-                            borderRadius: '6px',
-                            backgroundColor: 'rgba(99, 102, 241, 0.2)',
-                            color: '#818CF8',
-                            border: '1px solid rgba(99, 102, 241, 0.4)',
+                            backgroundColor: 'var(--admin-primary-soft)',
+                            color: 'var(--admin-primary)',
+                            flexShrink: 0,
                           }}
                         >
                           Target: {sub.duration_minutes || 5.5} min
@@ -218,7 +261,11 @@ export const AdminHierarchy: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div style={{ color: '#94A3B8', fontSize: '13px' }}>Select a topic on the left to inspect segmentation.</div>
+              <EmptyState
+                title="No topic selected"
+                description="Select a topic on the left to inspect segmentation."
+                icon={<ListTree size={20} />}
+              />
             )}
           </SurfacePanel>
         </div>

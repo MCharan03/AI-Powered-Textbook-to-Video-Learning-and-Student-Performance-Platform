@@ -66,6 +66,8 @@ def sync_sqlite_schema(engine):
         ("student_assignments", "submission_text", "TEXT"),
         ("student_assignments", "feedback", "TEXT"),
         ("student_assignments", "graded_at", "DATETIME"),
+        # PHASE 3B: Server-validated video completion (accumulated real watch time)
+        ("student_video_progress", "watched_seconds", "FLOAT DEFAULT 0"),
     ]
 
     with engine.connect() as conn:

@@ -98,10 +98,16 @@ def test_e2e_pipeline_review_and_learning_lifecycle(client, db_session):
     # Execute pipeline synchronously for test verification
     run_stages_1_to_5(db_session, tb_id)
 
-    # Step 3: Check Status
+    # Step 2b: Admin approves the extracted curriculum (real review gate) so the
+    # chapters/topics become APPROVED and learning content becomes assignable.
+    res_appr_tb = client.post(f"/admin/textbooks/{tb_id}/approve", headers=admin_headers)
+    assert res_appr_tb.status_code == 200
+    assert res_appr_tb.json()["status"] == "APPROVED"
+
+    # Step 3: Check Status (curriculum approved -> textbook in approved state)
     res_status = client.get(f"/admin/textbooks/{tb_id}/status", headers=admin_headers)
     assert res_status.status_code == 200
-    assert res_status.json()["status"] == "completed"
+    assert res_status.json()["status"] == "approved"
 
     # Step 4: Check Hierarchy
     res_hier = client.get(f"/admin/textbooks/{tb_id}/hierarchy", headers=admin_headers)
@@ -125,14 +131,40 @@ def test_e2e_pipeline_review_and_learning_lifecycle(client, db_session):
     res_unpub_video = client.get(f"/learn/videos/{video_id}", headers=student_headers)
     assert res_unpub_video.status_code == 404
 
-    # Step 7: Admin approves video and quiz
-    res_appr_v = client.post(
-        f"/admin/review/items/{video_id}/approval?type=video",
-        headers=admin_headers,
-        json={"decision": "approve"}
+    # Step 7: Admin approves video and quiz — via the REAL approval-gated chain:
+    # plan approval -> grounded script generation -> script approval ->
+    # real TTS/scene/ffmpeg render -> video approval -> publication.
+    res_plan_appr = client.post(
+        f"/admin/video-plans/{video_id}/approve",
+        headers=admin_headers
     )
-    assert res_appr_v.status_code == 200
-    assert res_appr_v.json()["status"] == "published"
+    assert res_plan_appr.status_code == 200
+
+    res_script_gen = client.post(
+        f"/admin/video-plans/{video_id}/script/generate",
+        headers=admin_headers
+    )
+    assert res_script_gen.status_code == 200, res_script_gen.text
+
+    res_script_appr = client.post(
+        f"/admin/scripts/{video_id}/approve",
+        headers=admin_headers
+    )
+    assert res_script_appr.status_code == 200, res_script_appr.text
+
+    res_render = client.post(
+        f"/admin/video-plans/{video_id}/video/generate",
+        headers=admin_headers
+    )
+    assert res_render.status_code == 200, res_render.text
+    assert res_render.json()["render_status"] == "RENDERED"
+
+    res_pub_v = client.post(
+        f"/admin/videos/{video_id}/publish",
+        headers=admin_headers
+    )
+    assert res_pub_v.status_code == 200, res_pub_v.text
+    assert res_pub_v.json()["status"] == "PUBLISHED"
 
     res_appr_q = client.post(
         f"/admin/review/items/{quiz_id}/approval?type=quiz",
@@ -142,11 +174,11 @@ def test_e2e_pipeline_review_and_learning_lifecycle(client, db_session):
     assert res_appr_q.status_code == 200
     assert res_appr_q.json()["status"] == "published"
 
-    # Step 8: Now student CAN access the pre-rendered video
+    # Step 8: Now student CAN access the rendered video
     res_pub_video = client.get(f"/learn/videos/{video_id}", headers=student_headers)
     assert res_pub_video.status_code == 200
     assert res_pub_video.json()["review_status"] == "published"
-    assert res_pub_video.json()["duration_seconds"] == 330  # Targets ~5.5 min
+    assert res_pub_video.json()["duration_seconds"] >= 30  # Real narration-driven duration
 
     # Step 9: Student records video progress
     res_prog = client.post(

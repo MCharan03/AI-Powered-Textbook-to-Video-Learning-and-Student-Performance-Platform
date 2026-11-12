@@ -548,6 +548,11 @@ class VideoOut(BaseModel):
     learning_objective: Optional[str] = None
     content_outline: Optional[List[str]] = None
     actual_duration_seconds: Optional[float] = None
+    # PHASE 3B: browser-compatible caption track (SRT converted to VTT) and
+    # the requesting student's resume state for playback continuation.
+    captions_url: Optional[str] = None
+    resume_position_seconds: Optional[float] = None
+    watch_percentage: Optional[float] = None
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -777,6 +782,10 @@ class ProgressIn(BaseModel):
     progress_pct: Optional[float] = None
     watch_percentage: Optional[float] = None
     last_position_seconds: Optional[float] = None
+    # Accumulated seconds of real playback (excluding paused time and seeks).
+    # When provided, the server derives watch coverage from this value against
+    # the video's actual duration instead of trusting a claimed percentage.
+    watched_seconds: Optional[float] = None
     completed: Optional[bool] = None
 
 
@@ -785,6 +794,7 @@ class ProgressOut(BaseModel):
     user_id: int
     progress_pct: float
     last_position_seconds: float = 0.0
+    watched_seconds: float = 0.0
     completed: bool
 
 
@@ -797,6 +807,9 @@ class QuestionOut(BaseModel):
     question_text: Optional[str] = None
     options: List[Any] = []
     objective: Optional[str] = None
+    # PHASE 3B: the pedagogical explanation shown AFTER grading (the learning
+    # objective was previously misused as the explanation on the frontend).
+    explanation: Optional[str] = None
     adaptive: bool = False
     weak_concept: Optional[str] = None
     question_type: str = "MCQ"

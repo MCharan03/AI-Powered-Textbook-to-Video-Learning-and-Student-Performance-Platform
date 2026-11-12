@@ -592,10 +592,26 @@ def test_23_student_visibility_isolation(client, auth_headers, db_session):
     v_res = client.get(f"/learn/videos/{plan_id}", headers=student_h)
     assert v_res.status_code == 404
 
-    # Admin approves plan
+    # Admin approves plan. NOTE: the learning portal additionally requires a
+    # RENDERED video before showing it to students — approval alone is not enough.
     client.post(f"/admin/video-plans/{plan_id}/approve", headers=admin_h)
+    s_res_pending = client.get(f"/learn/topics/{topic.id}/video-plans", headers=student_h)
+    assert s_res_pending.status_code == 200
+    assert len(s_res_pending.json()) == 0  # Approved but unrendered: still hidden
+    # Detail endpoint must also hide approved-but-unrendered plans from students
+    assert client.get(f"/learn/videos/{plan_id}", headers=student_h).status_code == 404
 
-    # Student now CAN see approved video plan
+    # Run the REAL chain: script generation -> script approval -> render -> publish
+    res_script = client.post(f"/admin/video-plans/{plan_id}/script/generate", headers=admin_h)
+    assert res_script.status_code == 200, res_script.text
+    res_script_appr = client.post(f"/admin/scripts/{plan_id}/approve", headers=admin_h)
+    assert res_script_appr.status_code == 200, res_script_appr.text
+    res_render = client.post(f"/admin/video-plans/{plan_id}/video/generate", headers=admin_h)
+    assert res_render.status_code == 200, res_render.text
+    res_pub = client.post(f"/admin/videos/{plan_id}/publish", headers=admin_h)
+    assert res_pub.status_code == 200, res_pub.text
+
+    # Student now CAN see the published video
     s_res_after = client.get(f"/learn/topics/{topic.id}/video-plans", headers=student_h)
     assert s_res_after.status_code == 200
     assert len(s_res_after.json()) == 1

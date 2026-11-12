@@ -1,247 +1,445 @@
-import React, { useState, useEffect } from 'react';
-import { SurfacePanel } from '../../components/SurfacePanel';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  GraduationCap,
+  Presentation,
+  Users,
+  BookText,
+  ClipboardCheck,
+  Clapperboard,
+  UserPlus,
+  Presentation as TeacherIcon,
+  Upload,
+  ShieldCheck,
+  BookOpen,
+  ArrowRight,
+  RefreshCw,
+  Activity,
+} from 'lucide-react';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { StatCard } from '../../components/admin/StatCard';
+import { WorkflowStepper } from '../../components/admin/WorkflowStepper';
+import { LoadingState } from '../../components/admin/LoadingState';
+import { ErrorState } from '../../components/admin/ErrorState';
+import { EmptyState } from '../../components/admin/EmptyState';
 import { StatusBadge } from '../../components/StatusBadge';
-import { DataTable, Column } from '../../components/DataTable';
 import { api } from '../../lib/api';
-import { Textbook } from '../../lib/types';
+import { Textbook, ReviewItem } from '../../lib/types';
 
 interface AdminDashboardProps {
   onNavigate: (route: string) => void;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
-  const [textbooks, setTextbooks] = useState<Textbook[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [title, setTitle] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+interface Counts {
+  students: number | null;
+  teachers: number | null;
+  parents: number | null;
+}
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      const data = await api.listTextbooks();
-      setTextbooks(data);
-    } catch (err: any) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+const PIPELINE_STEPS = [
+  'Upload Textbook',
+  'Extract Curriculum',
+  'Review & Approve',
+  'Video Plans',
+  'Scripts',
+  'Videos',
+  'Publish',
+];
+
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
+  const [counts, setCounts] = useState<Counts>({ students: null, teachers: null, parents: null });
+  const [textbooks, setTextbooks] = useState<Textbook[]>([]);
+  const [textbooksError, setTextbooksError] = useState<string | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<number | null>(null);
+  const [pendingItems, setPendingItems] = useState<ReviewItem[]>([]);
+  const [videosGenerated, setVideosGenerated] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDashboardData = useCallback(async () => {
+    setLoading(true);
+    setTextbooksError(null);
+
+    // Each metric is fetched independently so one failing endpoint
+    // never blanks the whole dashboard or fabricates a value.
+    const safe = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
+      try {
+        return await fn();
+      } catch {
+        return null;
+      }
+    };
+
+    const [studentsRes, teachersRes, parentsRes, textbookList, reviewItems, videosList] = await Promise.all([
+      safe(() => api.listStudents({ page: 1, page_size: 1 })),
+      safe(() => api.listTeachers({ page: 1, page_size: 1 })),
+      safe(() => api.listParents({ page: 1, page_size: 1 })),
+      safe(() => api.listTextbooks()),
+      safe(() => api.listReviewItems('pending_review')),
+      safe(() => api.listVideos()),
+    ]);
+
+    setCounts({
+      students: studentsRes ? studentsRes.total : null,
+      teachers: teachersRes ? teachersRes.total : null,
+      parents: parentsRes ? parentsRes.total : null,
+    });
+    setTextbooks(textbookList || []);
+    if (!textbookList) setTextbooksError('Textbook data could not be loaded.');
+    setPendingItems((reviewItems || []).slice(0, 5));
+    setPendingApprovals(reviewItems ? reviewItems.length : null);
+    setVideosGenerated(videosList ? videosList.length : null);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [fetchDashboardData]);
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!file || !title.trim()) {
-      setMessage({ text: 'Please provide both textbook title and a valid PDF file.', type: 'error' });
-      return;
-    }
+  const recentTextbooks = [...textbooks]
+    .sort((a, b) => {
+      const aTime = a.uploaded_at || a.created_at || '';
+      const bTime = b.uploaded_at || b.created_at || '';
+      return bTime.localeCompare(aTime);
+    })
+    .slice(0, 5);
 
-    try {
-      setUploading(true);
-      setMessage(null);
-      const uploaded = await api.uploadTextbook(file, title.trim());
-      setMessage({ text: `Textbook "${uploaded.title}" uploaded successfully.`, type: 'success' });
-      setTitle('');
-      setFile(null);
-      await fetchDashboardData();
-    } catch (err: any) {
-      setMessage({ text: `Upload failed: ${err.message}`, type: 'error' });
-    } finally {
-      setUploading(false);
-    }
-  };
+  const processingCount = textbooks.filter((t) => t.status === 'processing').length;
+  const completedCount = textbooks.filter((t) => t.status === 'completed' || t.status === 'approved').length;
+  const failedCount = textbooks.filter((t) => t.status === 'failed' || t.status === 'error').length;
+  const awaitingApprovalCount = textbooks.filter((t) => t.status === 'pending_review' || t.status === 'pending_approval' || t.status === 'pending').length;
 
-  const handleTrigger = async (id: number) => {
-    try {
-      await api.triggerPipeline(id);
-      setMessage({ text: `Pipeline triggered for Textbook #${id}.`, type: 'success' });
-      onNavigate('admin-pipeline');
-    } catch (err: any) {
-      setMessage({ text: `Trigger failed: ${err.message}`, type: 'error' });
-    }
-  };
-
-  const columns: Column<Textbook>[] = [
-    { key: 'id', header: 'ID', width: '60px' },
-    { key: 'title', header: 'Textbook Title' },
-    { key: 'filename', header: 'Filename' },
-    {
-      key: 'status',
-      header: 'Status',
-      render: (row) => <StatusBadge status={row.status} />,
-    },
-    { key: 'uploaded_at', header: 'Uploaded At' },
-    {
-      key: 'actions',
-      header: 'Actions',
-      render: (row) => (
-        <button
-          onClick={() => handleTrigger(row.id)}
-          style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
-            backgroundColor: 'var(--admin-primary)',
-            color: '#FFF',
-            border: 'none',
-            fontSize: '12px',
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          Run 6-Stage Pipeline
-        </button>
-      ),
-    },
+  const quickActions = [
+    { label: 'Add Student', icon: UserPlus, route: 'admin-students' },
+    { label: 'Add Teacher', icon: TeacherIcon, route: 'admin-teachers' },
+    { label: 'Upload Textbook', icon: Upload, route: 'admin-textbooks' },
+    { label: 'Review Curriculum', icon: ShieldCheck, route: 'admin-review' },
+    { label: 'Open Video Studio', icon: Clapperboard, route: 'admin-video-studio' },
   ];
 
+  const renderMetric = (value: number | null) => (value === null ? '—' : value.toLocaleString());
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Welcome */}
       <div>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#F8FAFC' }}>Admin Overview & Ingestion</h1>
-        <p style={{ fontSize: '14px', color: '#94A3B8', marginTop: '4px' }}>
-          Upload textbook PDFs and govern automated 6-stage content synthesis.
+        <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)', letterSpacing: '-0.01em' }}>
+          Welcome back, Admin
+        </h1>
+        <p style={{ fontSize: '14px', color: 'var(--admin-text-secondary)', marginTop: '4px', maxWidth: '640px' }}>
+          Here is the current status of your platform — registered users, uploaded textbooks, and content
+          moving through the AI generation pipeline.
         </p>
       </div>
 
-      {message && (
-        <div
-          style={{
-            padding: '12px 16px',
-            borderRadius: '8px',
-            backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-            border: `1px solid ${message.type === 'success' ? '#10B981' : '#EF4444'}`,
-            color: message.type === 'success' ? '#10B981' : '#EF4444',
-            fontSize: '13px',
-          }}
-        >
-          {message.text}
-        </div>
-      )}
-
-      {/* Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-        <SurfacePanel>
-          <div style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 600 }}>INGESTED TEXTBOOKS</div>
-          <div style={{ fontSize: '28px', fontWeight: 700, color: '#F8FAFC', marginTop: '8px' }}>{textbooks.length}</div>
-        </SurfacePanel>
-        <SurfacePanel>
-          <div style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 600 }}>ACTIVE PROCESSING</div>
-          <div style={{ fontSize: '28px', fontWeight: 700, color: '#F59E0B', marginTop: '8px' }}>
-            {textbooks.filter((t) => t.status === 'processing').length}
-          </div>
-        </SurfacePanel>
-        <SurfacePanel>
-          <div style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 600 }}>APPROVAL GATE STATUS</div>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: '#10B981', marginTop: '14px' }}>
-            Enforced (Mandatory)
-          </div>
-        </SurfacePanel>
-        <SurfacePanel>
-          <div style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 600 }}>TARGET DURATION</div>
-          <div style={{ fontSize: '28px', fontWeight: 700, color: '#6366F1', marginTop: '8px' }}>~5-6 min</div>
-        </SurfacePanel>
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
+        <StatCard
+          label="Total Students"
+          value={renderMetric(counts.students)}
+          hint={counts.students === null ? 'Data unavailable' : 'Registered learners'}
+          icon={GraduationCap}
+          tone="primary"
+          loading={loading}
+          onClick={() => onNavigate('admin-students')}
+        />
+        <StatCard
+          label="Total Teachers"
+          value={renderMetric(counts.teachers)}
+          hint={counts.teachers === null ? 'Data unavailable' : 'Active teaching staff'}
+          icon={Presentation}
+          tone="default"
+          loading={loading}
+          onClick={() => onNavigate('admin-teachers')}
+        />
+        <StatCard
+          label="Total Parents"
+          value={renderMetric(counts.parents)}
+          hint={counts.parents === null ? 'Data unavailable' : 'Linked guardians'}
+          icon={Users}
+          tone="default"
+          loading={loading}
+          onClick={() => onNavigate('admin-parents')}
+        />
+        <StatCard
+          label="Total Textbooks"
+          value={textbooksError ? '—' : renderMetric(textbooks.length)}
+          hint={textbooksError ? 'Data unavailable' : 'Uploaded source PDFs'}
+          icon={BookText}
+          tone="default"
+          loading={loading}
+          onClick={() => onNavigate('admin-textbooks')}
+        />
+        <StatCard
+          label="Pending Approvals"
+          value={renderMetric(pendingApprovals)}
+          hint={pendingApprovals === null ? 'Data unavailable' : 'Videos & quizzes awaiting review'}
+          icon={ClipboardCheck}
+          tone={pendingApprovals && pendingApprovals > 0 ? 'warning' : 'success'}
+          loading={loading}
+          onClick={() => onNavigate('admin-review')}
+        />
+        <StatCard
+          label="Videos Generated"
+          value={renderMetric(videosGenerated)}
+          hint={videosGenerated === null ? 'Data unavailable' : 'Renders across all topics'}
+          icon={Clapperboard}
+          tone="primary"
+          loading={loading}
+          onClick={() => onNavigate('admin-video-review')}
+        />
       </div>
 
-      {/* Upload Dropzone Container */}
-      <SurfacePanel>
-        <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#F8FAFC', marginBottom: '16px' }}>
-          Textbook PDF Ingestion Dropzone
-        </h2>
-        <form onSubmit={handleUpload} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', color: '#94A3B8', marginBottom: '6px' }}>
-              Textbook Title
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. NCERT Class 10 Science - Chemical Reactions"
-              style={{
-                width: '100%',
-                padding: '10px 14px',
-                borderRadius: '8px',
-                backgroundColor: '#0F172A',
-                border: '1px solid #334155',
-                color: '#F8FAFC',
-                fontSize: '14px',
-              }}
-            />
-          </div>
-
-          <div
-            style={{
-              border: '2px dashed #475569',
-              borderRadius: '10px',
-              padding: '32px 20px',
-              textAlign: 'center',
-              backgroundColor: 'rgba(15, 23, 42, 0.4)',
-              cursor: 'pointer',
-            }}
-            onClick={() => document.getElementById('pdf-file-input')?.click()}
-          >
-            <input
-              id="pdf-file-input"
-              type="file"
-              accept=".pdf,application/pdf"
-              style={{ display: 'none' }}
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
-            <div style={{ fontSize: '15px', fontWeight: 600, color: '#F8FAFC' }}>
-              {file ? file.name : 'Click to select or drag and drop textbook PDF'}
-            </div>
-            <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '4px' }}>
-              Supported: PDF format up to 50MB. Validated via PDF magic bytes.
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              type="submit"
-              disabled={uploading}
-              style={{
-                padding: '10px 24px',
-                borderRadius: '8px',
-                backgroundColor: 'var(--admin-primary)',
-                color: '#FFF',
-                border: 'none',
-                fontWeight: 600,
-                fontSize: '14px',
-                cursor: uploading ? 'not-allowed' : 'pointer',
-                opacity: uploading ? 0.7 : 1,
-              }}
-            >
-              {uploading ? 'Uploading & Validating...' : 'Upload Textbook PDF'}
-            </button>
-          </div>
-        </form>
-      </SurfacePanel>
-
-      {/* Recent Ingestion Activity */}
-      <SurfacePanel>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#F8FAFC' }}>Recent Ingested Textbooks</h2>
+      {/* Quick actions */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <h2 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--admin-text)' }}>Quick actions</h2>
           <button
+            type="button"
+            className="adm-btn adm-btn-ghost adm-btn-sm"
             onClick={fetchDashboardData}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              backgroundColor: 'transparent',
-              border: '1px solid #334155',
-              color: '#94A3B8',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
+            disabled={loading}
           >
-            Refresh
+            <RefreshCw size={13} />
+            Refresh data
           </button>
         </div>
-        <DataTable columns={columns} data={textbooks} emptyMessage="No textbooks uploaded yet. Use the upload box above." />
-      </SurfacePanel>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px' }}>
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={action.label}
+                type="button"
+                onClick={() => onNavigate(action.route)}
+                className="adm-card"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '14px 16px',
+                  border: '1px solid var(--admin-border)',
+                  background: 'var(--admin-surface)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  fontFamily: 'var(--font-family)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: 'var(--admin-text)',
+                }}
+              >
+                <span
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'var(--admin-primary-soft)',
+                    color: 'var(--admin-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Icon size={16} />
+                </span>
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Recent textbooks + pending approvals */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', alignItems: 'start' }}>
+        {/* Recently uploaded textbooks */}
+        <div className="adm-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--admin-text)' }}>Recently uploaded textbooks</h2>
+            <button
+              type="button"
+              className="adm-btn adm-btn-ghost adm-btn-sm"
+              onClick={() => onNavigate('admin-textbooks')}
+            >
+              View all
+              <ArrowRight size={13} />
+            </button>
+          </div>
+          {textbooksError ? (
+            <ErrorState message={textbooksError} onRetry={fetchDashboardData} />
+          ) : loading ? (
+            <LoadingState rows={3} />
+          ) : recentTextbooks.length === 0 ? (
+            <EmptyState
+              title="No textbooks uploaded yet"
+              description="Upload a PDF textbook to start the extraction and video generation pipeline."
+              action={
+                <button type="button" className="adm-btn adm-btn-primary adm-btn-sm" onClick={() => onNavigate('admin-textbooks')}>
+                  <Upload size={13} />
+                  Upload Textbook
+                </button>
+              }
+            />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {recentTextbooks.map((tb) => (
+                <div
+                  key={tb.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    padding: '10px 0',
+                    borderBottom: '1px solid var(--admin-border)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--admin-surface-raised)',
+                        color: 'var(--admin-text-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <BookOpen size={15} />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          color: 'var(--admin-text)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {tb.title}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
+                        {(tb.uploaded_at || tb.created_at || '').slice(0, 10) || 'Date unavailable'}
+                        {tb.subject_name ? ` · ${tb.subject_name}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <StatusBadge status={tb.status} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Pending curriculum approvals */}
+        <div className="adm-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--admin-text)' }}>Pending approvals</h2>
+            <button
+              type="button"
+              className="adm-btn adm-btn-ghost adm-btn-sm"
+              onClick={() => onNavigate('admin-review')}
+            >
+              Review queue
+              <ArrowRight size={13} />
+            </button>
+          </div>
+          {pendingApprovals === null ? (
+            <ErrorState message="Approval queue could not be loaded." onRetry={fetchDashboardData} />
+          ) : pendingItems.length === 0 ? (
+            <EmptyState
+              title="No pending approvals"
+              description="Generated videos and quizzes will appear here when they need your review."
+            />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {pendingItems.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    padding: '10px 0',
+                    borderBottom: '1px solid var(--admin-border)',
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: 'var(--admin-text)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {item.title}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
+                      {item.type === 'video' ? 'Video' : 'Quiz'} · {item.topic_title || 'Topic unavailable'}
+                    </div>
+                  </div>
+                  <StatusBadge status={item.status} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Processing overview */}
+      <div className="adm-card" style={{ padding: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Activity size={16} style={{ color: 'var(--admin-primary)' }} />
+            <h2 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--admin-text)' }}>Processing overview</h2>
+          </div>
+          <button
+            type="button"
+            className="adm-btn adm-btn-secondary adm-btn-sm"
+            onClick={() => onNavigate('admin-pipeline')}
+          >
+            Open Processing Monitor
+            <ArrowRight size={13} />
+          </button>
+        </div>
+
+        <WorkflowStepper steps={PIPELINE_STEPS} currentStep={0} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginTop: '16px' }}>
+          {[
+            { label: 'Awaiting approval', count: awaitingApprovalCount, tone: 'var(--admin-warning)' },
+            { label: 'Processing', count: processingCount, tone: 'var(--admin-primary)' },
+            { label: 'Completed', count: completedCount, tone: 'var(--admin-success)' },
+            { label: 'Failed', count: failedCount, tone: 'var(--admin-error)' },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              style={{
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--admin-bg)',
+                border: '1px solid var(--admin-border)',
+              }}
+            >
+              <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', fontWeight: 600 }}>{stat.label}</div>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: stat.tone, marginTop: '2px' }}>
+                {textbooksError ? '—' : stat.count}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '12px' }}>
+          Counts reflect the current status of uploaded textbooks across the pipeline. Detailed stage-by-stage
+          logs live in the Processing Monitor.
+        </p>
+      </div>
     </div>
   );
 };

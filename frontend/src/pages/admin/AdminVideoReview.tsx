@@ -1,6 +1,30 @@
 import React, { useState, useEffect } from 'react';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { MessageBanner } from '../../components/admin/MessageBanner';
+import { SearchBar } from '../../components/admin/SearchBar';
+import { Modal } from '../../components/admin/Modal';
+import { EmptyState } from '../../components/admin/EmptyState';
+import { StatusBadge } from '../../components/StatusBadge';
+import { SurfacePanel } from '../../components/SurfacePanel';
+import {
+  Clapperboard,
+  Film,
+  RefreshCw,
+  Zap,
+  Lock,
+  Check,
+  Rocket,
+  Clock,
+  AlertTriangle,
+  FileText,
+  ArrowRight,
+} from 'lucide-react';
 import { api } from '../../lib/api';
 import { VideoRenderDetails, VideoGenerationStatus, SceneItem } from '../../lib/types';
+
+const FILTER_STATUSES = ['ALL', 'REVIEW', 'APPROVED', 'PUBLISHED', 'PENDING_RENDER'];
+
+const MONO_FONT = "'SF Mono', Menlo, Monaco, 'Courier New', monospace";
 
 export const AdminVideoReview: React.FC = () => {
   const [videos, setVideos] = useState<VideoRenderDetails[]>([]);
@@ -183,610 +207,841 @@ export const AdminVideoReview: React.FC = () => {
     selectedVideo?.script_status === 'SCRIPT_APPROVED'
   );
 
+  const scriptBadgeStatus = selectedVideo?.script_status === 'SCRIPT_APPROVED' ? 'approved' : (selectedVideo?.script_status || 'NOT_GENERATED');
+  const renderBadgeStatus = selectedVideo?.render_status === 'RENDERED' ? 'completed' : (selectedVideo?.render_status || 'NOT_STARTED');
+  const isNeuralVoice = selectedVideo?.voice_quality === 'NEURAL' || (selectedVideo?.tts_engine && (selectedVideo.tts_engine.includes('neural') || selectedVideo.tts_engine.includes('elevenlabs')));
+
+  const bannerMessage = successMsg
+    ? { text: successMsg, type: 'success' as const }
+    : errorMsg
+    ? { text: errorMsg, type: 'error' as const }
+    : null;
+
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
-      {/* LEFT SIDEBAR: Video List */}
-      <div className="w-80 border-r border-slate-800 bg-slate-900/60 flex flex-col flex-shrink-0">
-        <div className="p-4 border-b border-slate-800">
-          <div className="flex items-center justify-between mb-3">
-            <h1 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>🎬</span> Video Review
-            </h1>
-            <button
-              onClick={loadVideos}
-              className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded transition"
-              title="Refresh videos"
-            >
-              🔄
-            </button>
-          </div>
-          <input
-            type="text"
-            placeholder="Search videos, topics..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 mb-2"
-          />
-          <div className="flex gap-1 overflow-x-auto pb-1 text-[11px]">
-            {['ALL', 'REVIEW', 'APPROVED', 'PUBLISHED', 'PENDING_RENDER'].map((st) => (
-              <button
-                key={st}
-                onClick={() => setFilterStatus(st)}
-                className={`px-2 py-0.5 rounded-full font-medium whitespace-nowrap transition ${
-                  filterStatus === st
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
-                }`}
-              >
-                {st.replace('_', ' ')}
-              </button>
-            ))}
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <PageHeader
+        title="Video Review"
+        description="Inspect rendered videos, verify narration quality, and gate approval & publishing to students."
+        actions={
+          <button
+            type="button"
+            className="adm-btn adm-btn-secondary"
+            onClick={loadVideos}
+            title="Refresh videos"
+          >
+            <RefreshCw size={15} />
+            Refresh
+          </button>
+        }
+      />
+
+      <MessageBanner
+        message={bannerMessage}
+        onDismiss={() => {
+          setSuccessMsg(null);
+          setErrorMsg(null);
+        }}
+      />
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start' }}>
+        {/* LEFT: Video List */}
+        <div style={{ flex: '1 1 280px', minWidth: '270px', maxWidth: '340px', width: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <SurfacePanel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <SearchBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="Search videos, topics..."
+              />
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {FILTER_STATUSES.map((st) => {
+                  const active = filterStatus === st;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setFilterStatus(st)}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        border: `1px solid ${active ? 'var(--admin-primary)' : 'var(--admin-border)'}`,
+                        backgroundColor: active ? 'var(--admin-primary-soft)' : 'transparent',
+                        color: active ? 'var(--admin-primary)' : 'var(--admin-text-secondary)',
+                      }}
+                    >
+                      {st.replace('_', ' ')}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </SurfacePanel>
+
+          <SurfacePanel style={{ padding: '6px' }}>
+            <div style={{ maxHeight: '60vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {loading ? (
+                <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: '13px', color: 'var(--admin-text-secondary)' }}>
+                  Loading videos...
+                </div>
+              ) : filteredVideos.length === 0 ? (
+                <EmptyState
+                  icon={<Clapperboard size={20} />}
+                  title="No videos match filters"
+                  description="Adjust the search or status filter to see more videos."
+                />
+              ) : (
+                filteredVideos.map((v) => {
+                  const isSelected = selectedVideo?.id === v.id;
+                  const isRendered = v.render_status === 'RENDERED';
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => setSelectedVideo(v)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '10px 12px',
+                        border: `1px solid ${isSelected ? 'var(--admin-primary)' : 'var(--admin-border)'}`,
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: isSelected ? 'var(--admin-primary-soft)' : 'var(--admin-surface)',
+                        cursor: 'pointer',
+                        fontFamily: 'var(--font-family)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--admin-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {v.title}
+                        </span>
+                        <StatusBadge status={v.status} />
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '6px' }}>
+                        {v.subject_name || 'Subject'} • {v.topic_title || 'Topic'}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={11} />
+                          {formatSec(v.actual_duration_seconds || v.approved_duration_seconds)}
+                        </span>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontWeight: 600,
+                            color: isRendered ? 'var(--admin-success)' : 'var(--admin-text-secondary)',
+                          }}
+                        >
+                          <Film size={11} />
+                          {isRendered ? 'Rendered' : 'Not Rendered'}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </SurfacePanel>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-          {loading ? (
-            <div className="p-8 text-center text-xs text-slate-500 animate-pulse">Loading videos...</div>
-          ) : filteredVideos.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-500">No videos match filters.</div>
-          ) : (
-            filteredVideos.map((v) => {
-              const isSelected = selectedVideo?.id === v.id;
-              const isRendered = v.render_status === 'RENDERED';
-              return (
+        {/* RIGHT: Detail Panel */}
+        <div style={{ flex: '3 1 560px', minWidth: '320px', width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {selectedVideo ? (
+            <>
+              {/* HEADER */}
+              <SurfacePanel>
                 <div
-                  key={v.id}
-                  onClick={() => setSelectedVideo(v)}
-                  className={`p-3 rounded-lg cursor-pointer transition border text-xs ${
-                    isSelected
-                      ? 'bg-indigo-950/40 border-indigo-500/80 shadow-md'
-                      : 'bg-slate-900/40 border-slate-800/80 hover:bg-slate-800/40 hover:border-slate-700'
-                  }`}
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '14px',
+                  }}
                 >
-                  <div className="flex items-start justify-between gap-1 mb-1">
-                    <span className="font-semibold text-slate-200 line-clamp-1">{v.title}</span>
-                    <span
-                      className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider ${
-                        v.status === 'PUBLISHED'
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : v.status === 'APPROVED'
-                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                          : isRendered
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
-                      {v.status}
-                    </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                      <span
+                        className="adm-badge"
+                        style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }}
+                      >
+                        {selectedVideo.subject_name || 'Subject'} • {selectedVideo.chapter_title || 'Chapter'}
+                      </span>
+                      <span style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
+                        Topic: {selectedVideo.topic_title || '—'}
+                      </span>
+                      {selectedVideo.subtopic_title && (
+                        <span style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
+                          ({selectedVideo.subtopic_title})
+                        </span>
+                      )}
+                    </div>
+                    <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--admin-text)', margin: 0 }}>
+                      {selectedVideo.title}
+                    </h2>
                   </div>
-                  <div className="text-[11px] text-slate-400 line-clamp-1 mb-2">
-                    {v.subject_name || 'Subject'} • {v.topic_title || 'Topic'}
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-slate-500">
-                    <span>⏱ {formatSec(v.actual_duration_seconds || v.approved_duration_seconds)}</span>
-                    <span className={isRendered ? 'text-emerald-400' : 'text-slate-500'}>
-                      {isRendered ? '🎥 Rendered' : '⚙️ Not Rendered'}
-                    </span>
+
+                  {/* ACTION BUTTONS */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {selectedVideo.render_status !== 'RENDERED' && (
+                      <button
+                        type="button"
+                        className="adm-btn adm-btn-primary"
+                        onClick={handleStartGeneration}
+                        disabled={actionLoading || generating || selectedVideo.script_status !== 'SCRIPT_APPROVED'}
+                        title={selectedVideo.script_status !== 'SCRIPT_APPROVED' ? 'Approve script in Script Review to enable video generation' : ''}
+                      >
+                        {selectedVideo.script_status === 'SCRIPT_APPROVED' ? <Zap size={15} /> : <Lock size={15} />}
+                        {generating ? 'Rendering...' : selectedVideo.script_status === 'SCRIPT_APPROVED' ? 'Generate Video' : 'Script Approval Required'}
+                      </button>
+                    )}
+
+                    {selectedVideo.render_status === 'RENDERED' && (
+                      <>
+                        <button
+                          type="button"
+                          className="adm-btn adm-btn-secondary"
+                          onClick={() => setShowRegenModal(true)}
+                          disabled={actionLoading || generating}
+                        >
+                          <RefreshCw size={15} />
+                          Regenerate
+                        </button>
+
+                        {selectedVideo.status !== 'APPROVED' && selectedVideo.status !== 'PUBLISHED' && canPublish && (
+                          <button
+                            type="button"
+                            className="adm-btn adm-btn-primary"
+                            onClick={handleApprove}
+                            disabled={actionLoading}
+                          >
+                            <Check size={15} />
+                            Approve Video
+                          </button>
+                        )}
+
+                        {selectedVideo.status !== 'PUBLISHED' && canPublish && (
+                          <button
+                            type="button"
+                            className="adm-btn adm-btn-primary"
+                            onClick={handlePublish}
+                            disabled={actionLoading}
+                          >
+                            <Rocket size={15} />
+                            Publish for Students
+                          </button>
+                        )}
+
+                        {selectedVideo.status === 'PUBLISHED' && isRenderedValid && (
+                          <span
+                            className="adm-badge"
+                            style={{
+                              backgroundColor: 'var(--admin-success-soft)',
+                              color: 'var(--admin-success)',
+                              padding: '6px 12px',
+                              fontSize: '12px',
+                            }}
+                          >
+                            <Check size={13} strokeWidth={3} />
+                            LIVE & PUBLISHED
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
-              );
-            })
+              </SurfacePanel>
+
+              {/* PROCESSING PROGRESS BAR */}
+              {generating && jobStatus && (
+                <SurfacePanel>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--admin-primary)' }}>
+                      Stage: {jobStatus.current_stage.replace('_', ' ')}
+                    </span>
+                    <span style={{ fontFamily: MONO_FONT, color: 'var(--admin-text-secondary)' }}>
+                      {Math.round(jobStatus.progress)}%
+                    </span>
+                  </div>
+                  <div style={{ width: '100%', backgroundColor: 'var(--admin-surface-raised)', borderRadius: '999px', height: '8px', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        backgroundColor: 'var(--admin-primary)',
+                        height: '100%',
+                        borderRadius: '999px',
+                        transition: 'width var(--duration-normal) var(--ease)',
+                        width: `${jobStatus.progress}%`,
+                      }}
+                    />
+                  </div>
+                </SurfacePanel>
+              )}
+
+              {/* MAIN VIDEO PLAYER & METADATA */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start' }}>
+                {/* VIDEO PLAYER */}
+                <div style={{ flex: '2 1 440px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div
+                    style={{
+                      aspectRatio: '16 / 9',
+                      backgroundColor: '#000000',
+                      borderRadius: 'var(--radius-lg)',
+                      overflow: 'hidden',
+                      border: '1px solid var(--admin-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {selectedVideo.video_url ? (
+                      <video
+                        controls
+                        poster={selectedVideo.thumbnail_url}
+                        src={selectedVideo.video_url}
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      >
+                        {selectedVideo.captions_storage_key && (
+                          <track
+                            kind="subtitles"
+                            src={`/assets/${selectedVideo.captions_storage_key}`}
+                            label="English"
+                            default
+                          />
+                        )}
+                        Your browser does not support the video tag.
+                      </video>
+                    ) : (
+                      <EmptyState
+                        icon={<Clapperboard size={22} />}
+                        title="No Rendered Video Yet"
+                        description="This approved video plan is waiting for scene composition and narration rendering."
+                        action={
+                          <button
+                            type="button"
+                            className="adm-btn adm-btn-primary"
+                            onClick={handleStartGeneration}
+                            disabled={actionLoading || generating}
+                          >
+                            Start Video Generation
+                          </button>
+                        }
+                      />
+                    )}
+                  </div>
+
+                  {/* Captions Snippet */}
+                  {selectedVideo.captions_srt && (
+                    <SurfacePanel>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          color: 'var(--admin-text-secondary)',
+                          marginBottom: '8px',
+                        }}
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <FileText size={13} />
+                          Captions / Subtitles (SRT)
+                        </span>
+                        <span style={{ textTransform: 'none', fontWeight: 400 }}>Auto-Generated</span>
+                      </div>
+                      <pre
+                        style={{
+                          fontSize: '11px',
+                          fontFamily: MONO_FONT,
+                          color: 'var(--admin-text-secondary)',
+                          backgroundColor: 'var(--admin-bg)',
+                          border: '1px solid var(--admin-border)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '10px 12px',
+                          maxHeight: '96px',
+                          overflowY: 'auto',
+                          whiteSpace: 'pre-wrap',
+                          margin: 0,
+                          lineHeight: '16px',
+                        }}
+                      >
+                        {selectedVideo.captions_srt}
+                      </pre>
+                    </SurfacePanel>
+                  )}
+                </div>
+
+                {/* METADATA CARDS */}
+                <div style={{ flex: '1 1 280px', minWidth: '270px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Status Card */}
+                  <SurfacePanel title="Generation Status">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Video Plan:</span>
+                        <StatusBadge status={(selectedVideo as any).video_plan_status || (selectedVideo.status === 'REVIEW' && selectedVideo.render_status === 'NOT_STARTED' ? 'PENDING' : 'APPROVED')} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Script Status:</span>
+                        <StatusBadge status={scriptBadgeStatus} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Render Status:</span>
+                        <StatusBadge status={renderBadgeStatus} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Learning Status:</span>
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            color:
+                              selectedVideo.status === 'PUBLISHED' && isRenderedValid
+                                ? 'var(--admin-success)'
+                                : 'var(--admin-primary)',
+                          }}
+                        >
+                          {selectedVideo.status === 'PUBLISHED' && isRenderedValid
+                            ? 'PUBLISHED'
+                            : canPublish
+                            ? 'READY FOR PUBLISH'
+                            : selectedVideo.status}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Version:</span>
+                        <span style={{ fontFamily: MONO_FONT, color: 'var(--admin-text)', fontWeight: 600 }}>v{selectedVideo.version_number}</span>
+                      </div>
+                    </div>
+                  </SurfacePanel>
+
+                  {/* Duration & Engines */}
+                  <SurfacePanel title="Audio & Engine Details">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Scene Count:</span>
+                        <span style={{ fontFamily: MONO_FONT, fontWeight: 600, color: 'var(--admin-text)' }}>
+                          {selectedVideo.scenes?.length || 0} scenes
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Target Duration:</span>
+                        <span style={{ fontFamily: MONO_FONT, color: 'var(--admin-text)' }}>{formatSec(selectedVideo.approved_duration_seconds)} min</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Actual Duration:</span>
+                        <span
+                          style={{
+                            fontFamily: MONO_FONT,
+                            fontWeight: 600,
+                            color: (selectedVideo.actual_duration_seconds || 0) > 0 ? 'var(--admin-success)' : 'var(--admin-text-secondary)',
+                          }}
+                        >
+                          {formatSec(selectedVideo.actual_duration_seconds)} min
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>TTS Engine:</span>
+                        <span style={{ color: 'var(--admin-text)' }}>{selectedVideo.tts_engine || 'deterministic'}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Renderer:</span>
+                        <span style={{ color: 'var(--admin-text)' }}>{selectedVideo.render_engine ? `${selectedVideo.render_engine} 720p HD` : 'FFmpeg 720p HD'}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Storage / File Status:</span>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontWeight: 600,
+                            color: isPlaceholder
+                              ? 'var(--admin-warning)'
+                              : selectedVideo.video_storage_key
+                              ? 'var(--admin-success)'
+                              : 'var(--admin-text-secondary)',
+                          }}
+                        >
+                          {isPlaceholder ? (
+                            <>
+                              <AlertTriangle size={12} />
+                              Placeholder (Needs Render)
+                            </>
+                          ) : selectedVideo.video_storage_key ? (
+                            <>
+                              <Check size={12} strokeWidth={3} />
+                              Valid Rendered MP4
+                            </>
+                          ) : (
+                            'No Output File'
+                          )}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Source Traceability:</span>
+                        <span style={{ color: 'var(--admin-text)' }}>
+                          {selectedVideo.source_page_start != null ? `Pages ${selectedVideo.source_page_start}–${selectedVideo.source_page_end || selectedVideo.source_page_start}` : 'Curriculum Spec'}
+                        </span>
+                      </div>
+                    </div>
+                  </SurfacePanel>
+
+                  {/* Narration Quality & Audio Metrics */}
+                  <SurfacePanel
+                    title="Narration & Neural Audio"
+                    actions={
+                      <span
+                        className="adm-badge"
+                        style={
+                          isNeuralVoice
+                            ? { backgroundColor: 'var(--admin-success-soft)', color: 'var(--admin-success)' }
+                            : { backgroundColor: 'var(--admin-warning-soft)', color: 'var(--admin-warning)' }
+                        }
+                      >
+                        {selectedVideo.voice_quality || (isNeuralVoice ? 'NEURAL' : 'FALLBACK')}
+                      </span>
+                    }
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>TTS Provider:</span>
+                        <span style={{ fontWeight: 600, color: 'var(--admin-text)' }}>
+                          {selectedVideo.tts_provider || (selectedVideo.tts_engine?.includes('elevenlabs') ? 'ElevenLabs' : selectedVideo.tts_engine?.includes('neural') ? 'Neural TTS' : 'Local Fallback')}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Voice:</span>
+                        <span style={{ fontFamily: MONO_FONT, color: 'var(--admin-text)' }}>
+                          {selectedVideo.voice || 'en-US-AndrewNeural'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Voice Quality:</span>
+                        <span style={{ fontWeight: 600, color: isNeuralVoice ? 'var(--admin-success)' : 'var(--admin-warning)' }}>
+                          {selectedVideo.voice_quality || (isNeuralVoice ? 'NEURAL' : 'FALLBACK')}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Speaking Rate:</span>
+                        <span style={{ fontFamily: MONO_FONT, color: 'var(--admin-text)' }}>
+                          {selectedVideo.speaking_rate || '140 WPM'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Audio Quality:</span>
+                        <span style={{ fontWeight: 600, color: 'var(--admin-success)' }}>
+                          {selectedVideo.audio_quality || 'PASS'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Scenes with Narration:</span>
+                        <span style={{ fontFamily: MONO_FONT, fontWeight: 600, color: 'var(--admin-success)' }}>
+                          {selectedVideo.scenes?.filter(s => s.narration_text && s.narration_text.trim().length > 0).length || 0} / {selectedVideo.scenes?.length || 0}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Audio Duration:</span>
+                        <span style={{ fontFamily: MONO_FONT, fontWeight: 600, color: 'var(--admin-success)' }}>
+                          {formatSec(selectedVideo.actual_duration_seconds)}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ color: 'var(--admin-text-secondary)' }}>Narration Coverage:</span>
+                        <span style={{ fontFamily: MONO_FONT, fontWeight: 600, color: 'var(--admin-success)' }}>
+                          {selectedVideo.scenes && selectedVideo.scenes.length > 0
+                            ? `${Math.round((selectedVideo.scenes.filter(s => s.narration_text && s.narration_text.trim().length > 0).length / selectedVideo.scenes.length) * 100)}%`
+                            : '100%'}
+                        </span>
+                      </div>
+                    </div>
+                  </SurfacePanel>
+
+                  {/* Thumbnail */}
+                  {selectedVideo.thumbnail_url && (
+                    <SurfacePanel title="Video Thumbnail">
+                      <img
+                        src={selectedVideo.thumbnail_url}
+                        alt="Thumbnail"
+                        style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', borderRadius: 'var(--radius-md)', border: '1px solid var(--admin-border)' }}
+                      />
+                    </SurfacePanel>
+                  )}
+                </div>
+              </div>
+
+              {/* SCENES BREAKDOWN */}
+              <div style={{ paddingTop: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--admin-text)', margin: 0 }}>
+                      Educational Scenes Breakdown
+                    </h3>
+                    <p style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
+                      Individual timed scene components composed with visual cue slides and narration.
+                    </p>
+                  </div>
+                  <span
+                    className="adm-badge"
+                    style={{ backgroundColor: 'var(--admin-surface-raised)', color: 'var(--admin-text-secondary)' }}
+                  >
+                    {selectedVideo.scenes?.length || 0} Scenes Total
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px' }}>
+                  {selectedVideo.scenes && selectedVideo.scenes.length > 0 ? (
+                    selectedVideo.scenes.map((scene) => (
+                      <div
+                        key={scene.scene_number}
+                        onClick={() => setSelectedScene(scene)}
+                        style={{
+                          backgroundColor: 'var(--admin-surface)',
+                          border: '1px solid var(--admin-border)',
+                          borderRadius: 'var(--radius-lg)',
+                          padding: '14px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
+                            <span
+                              className="adm-badge"
+                              style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)', fontFamily: MONO_FONT }}
+                            >
+                              SCENE {String(scene.scene_number).padStart(2, '0')} • {scene.section_type}
+                            </span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontFamily: MONO_FONT, color: 'var(--admin-text-secondary)' }}>
+                              <Clock size={11} />
+                              {scene.estimated_duration_seconds}s
+                            </span>
+                          </div>
+                          <h4 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--admin-text)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {scene.title}
+                          </h4>
+                          <p
+                            style={{
+                              fontSize: '12px',
+                              color: 'var(--admin-text-secondary)',
+                              margin: '4px 0 0 0',
+                              lineHeight: '18px',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 3,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {scene.narration_text}
+                          </p>
+                        </div>
+
+                        <div style={{ paddingTop: '10px', borderTop: '1px solid var(--admin-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
+                          <span
+                            className="adm-badge"
+                            style={{ backgroundColor: 'var(--admin-surface-raised)', color: 'var(--admin-text-secondary)', fontFamily: MONO_FONT }}
+                          >
+                            {scene.visual_type}
+                          </span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: MONO_FONT }}>
+                            {formatSec(scene.start_time_seconds)}
+                            <ArrowRight size={11} />
+                            {formatSec(scene.end_time_seconds)}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div
+                      style={{
+                        gridColumn: '1 / -1',
+                        padding: '32px 16px',
+                        textAlign: 'center',
+                        fontSize: '13px',
+                        color: 'var(--admin-text-secondary)',
+                        backgroundColor: 'var(--admin-bg)',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px dashed var(--admin-border)',
+                      }}
+                    >
+                      No scenes generated yet. Generate the video to compile scene definitions.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <SurfacePanel>
+              <EmptyState
+                icon={<Clapperboard size={20} />}
+                title="Select a video"
+                description="Select a video from the list to inspect and review."
+              />
+            </SurfacePanel>
           )}
         </div>
       </div>
 
-      {/* RIGHT MAIN PANEL */}
-      <div className="flex-1 flex flex-col overflow-y-auto">
-        {selectedVideo ? (
-          <div className="p-6 max-w-6xl w-full mx-auto space-y-6">
-            {/* Alerts */}
-            {errorMsg && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-xs flex items-center justify-between">
-                <span>⚠️ {errorMsg}</span>
-                <button onClick={() => setErrorMsg(null)} className="text-red-400 hover:text-white">✕</button>
-              </div>
-            )}
-            {successMsg && (
-              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-emerald-400 text-xs flex items-center justify-between">
-                <span>✓ {successMsg}</span>
-                <button onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-white">✕</button>
-              </div>
-            )}
-
-            {/* HEADER */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                    {selectedVideo.subject_name || 'Subject'} • {selectedVideo.chapter_title || 'Chapter'}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    Topic: {selectedVideo.topic_title}
-                  </span>
-                  {selectedVideo.subtopic_title && (
-                    <span className="text-xs text-slate-500">
-                      ({selectedVideo.subtopic_title})
-                    </span>
-                  )}
-                </div>
-                <h2 className="text-2xl font-bold text-white">{selectedVideo.title}</h2>
-              </div>
-
-              {/* ACTION BUTTONS */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {selectedVideo.render_status !== 'RENDERED' && (
-                  <button
-                    onClick={handleStartGeneration}
-                    disabled={actionLoading || generating || selectedVideo.script_status !== 'SCRIPT_APPROVED'}
-                    className={`px-4 py-2 ${
-                      selectedVideo.script_status === 'SCRIPT_APPROVED'
-                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30'
-                        : 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed'
-                    } disabled:opacity-50 rounded-lg text-xs font-semibold shadow-lg transition flex items-center gap-1.5`}
-                    title={selectedVideo.script_status !== 'SCRIPT_APPROVED' ? 'Approve script in Script Review to enable video generation' : ''}
-                  >
-                    <span>{selectedVideo.script_status === 'SCRIPT_APPROVED' ? '⚡' : '🔒'}</span>{' '}
-                    {generating ? 'Rendering...' : selectedVideo.script_status === 'SCRIPT_APPROVED' ? 'Generate Video' : 'Script Approval Required'}
-                  </button>
-                )}
-
-                {selectedVideo.render_status === 'RENDERED' && (
-                  <>
-                    <button
-                      onClick={() => setShowRegenModal(true)}
-                      disabled={actionLoading || generating}
-                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
-                    >
-                      <span>🔄</span> Regenerate
-                    </button>
-
-                    {selectedVideo.status !== 'APPROVED' && selectedVideo.status !== 'PUBLISHED' && canPublish && (
-                      <button
-                        onClick={handleApprove}
-                        disabled={actionLoading}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-lg shadow-blue-600/30 transition flex items-center gap-1.5"
-                      >
-                        <span>✓</span> Approve Video
-                      </button>
-                    )}
-
-                    {selectedVideo.status !== 'PUBLISHED' && canPublish && (
-                      <button
-                        onClick={handlePublish}
-                        disabled={actionLoading}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-lg shadow-emerald-600/30 transition flex items-center gap-1.5"
-                      >
-                        <span>🚀</span> Publish for Students
-                      </button>
-                    )}
-
-                    {selectedVideo.status === 'PUBLISHED' && isRenderedValid && (
-                      <span className="px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5">
-                        <span>✓</span> LIVE & PUBLISHED
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* PROCESSING PROGRESS BAR */}
-            {generating && jobStatus && (
-              <div className="bg-slate-900 border border-indigo-500/40 rounded-xl p-4 shadow-xl">
-                <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="font-semibold text-indigo-400">
-                    Stage: {jobStatus.current_stage.replace('_', ' ')}
-                  </span>
-                  <span className="font-mono text-slate-400">{Math.round(jobStatus.progress)}%</span>
-                </div>
-                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-indigo-500 h-full rounded-full transition-all duration-300"
-                    style={{ width: `${jobStatus.progress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* MAIN VIDEO PLAYER & METADATA SECTION */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* VIDEO PLAYER (Left 2 cols) */}
-              <div className="lg:col-span-2 space-y-3">
-                <div className="aspect-video bg-black rounded-xl overflow-hidden border border-slate-800 shadow-2xl relative flex items-center justify-center">
-                  {selectedVideo.video_url ? (
-                    <video
-                      controls
-                      poster={selectedVideo.thumbnail_url}
-                      src={selectedVideo.video_url}
-                      className="w-full h-full object-contain"
-                    >
-                      {selectedVideo.captions_storage_key && (
-                        <track
-                          kind="subtitles"
-                          src={`/assets/${selectedVideo.captions_storage_key}`}
-                          label="English"
-                          default
-                        />
-                      )}
-                      Your browser does not support the video tag.
-                    </video>
-                  ) : (
-                    <div className="text-center p-8 space-y-3">
-                      <div className="text-4xl">🎬</div>
-                      <div className="text-sm font-semibold text-slate-400">No Rendered Video Yet</div>
-                      <div className="text-xs text-slate-600 max-w-sm">
-                        This approved video plan is waiting for scene composition and narration rendering.
-                      </div>
-                      <button
-                        onClick={handleStartGeneration}
-                        disabled={actionLoading || generating}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition"
-                      >
-                        Start Video Generation
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Subtitle / Captions Snippet */}
-                {selectedVideo.captions_srt && (
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                    <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                      <span>💬 Captions / Subtitles (SRT)</span>
-                      <span className="text-slate-500">Auto-Generated</span>
-                    </div>
-                    <pre className="text-[11px] font-mono text-slate-300 max-h-24 overflow-y-auto whitespace-pre-wrap leading-relaxed">
-                      {selectedVideo.captions_srt}
-                    </pre>
-                  </div>
-                )}
-              </div>
-
-              {/* METADATA CARDS (Right 1 col) */}
-              <div className="space-y-4">
-                {/* Status Card */}
-                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
-                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Generation Status
-                  </h3>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Video Plan:</span>
-                      <span className="font-semibold text-emerald-400">
-                        {(selectedVideo as any).video_plan_status || (selectedVideo.status === 'REVIEW' && selectedVideo.render_status === 'NOT_STARTED' ? 'PENDING' : 'APPROVED')}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Script Status:</span>
-                      <span className={`font-semibold ${selectedVideo.script_status === 'SCRIPT_APPROVED' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {selectedVideo.script_status || 'NOT_GENERATED'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Render Status:</span>
-                      <span className={`font-semibold ${selectedVideo.render_status === 'RENDERED' ? 'text-emerald-400' : selectedVideo.render_status === 'FAILED' ? 'text-red-400' : 'text-amber-400'}`}>
-                        {selectedVideo.render_status}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Learning Status:</span>
-                      <span className={`font-semibold ${
-                        selectedVideo.status === 'PUBLISHED' && isRenderedValid
-                          ? 'text-emerald-400'
-                          : canPublish
-                          ? 'text-indigo-400'
-                          : 'text-blue-400'
-                      }`}>
-                        {selectedVideo.status === 'PUBLISHED' && isRenderedValid
-                          ? 'PUBLISHED'
-                          : canPublish
-                          ? 'READY FOR PUBLISH'
-                          : selectedVideo.status}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Version:</span>
-                      <span className="font-mono text-slate-300">v{selectedVideo.version_number}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Duration & Engines */}
-                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
-                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Audio & Engine Details
-                  </h3>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Scene Count:</span>
-                      <span className="font-mono font-semibold text-indigo-300">
-                        {selectedVideo.scenes?.length || 0} scenes
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Target Duration:</span>
-                      <span className="font-mono text-slate-300">{formatSec(selectedVideo.approved_duration_seconds)} min</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Actual Duration:</span>
-                      <span className={`font-mono font-semibold ${(selectedVideo.actual_duration_seconds || 0) > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
-                        {formatSec(selectedVideo.actual_duration_seconds)} min
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">TTS Engine:</span>
-                      <span className="text-indigo-300">{selectedVideo.tts_engine || 'deterministic'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Renderer:</span>
-                      <span className="text-indigo-300">{selectedVideo.render_engine ? `${selectedVideo.render_engine} 720p HD` : 'FFmpeg 720p HD'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Storage / File Status:</span>
-                      <span className={`font-semibold ${isPlaceholder ? 'text-amber-400' : selectedVideo.video_storage_key ? 'text-emerald-400' : 'text-slate-500'}`}>
-                        {isPlaceholder ? '⚠️ Placeholder (Needs Render)' : selectedVideo.video_storage_key ? '✓ Valid Rendered MP4' : 'No Output File'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Source Traceability:</span>
-                      <span className="text-slate-300">
-                        {selectedVideo.source_page_start != null ? `Pages ${selectedVideo.source_page_start}–${selectedVideo.source_page_end || selectedVideo.source_page_start}` : 'Curriculum Spec'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Narration Quality & Audio Metrics (Build 8.4.1 & 8.4.2) */}
-                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
-                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                    <span>Narration & Neural Audio</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
-                      selectedVideo.voice_quality === 'NEURAL' || (selectedVideo.tts_engine && (selectedVideo.tts_engine.includes('neural') || selectedVideo.tts_engine.includes('elevenlabs')))
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    }`}>
-                      {selectedVideo.voice_quality || (selectedVideo.tts_engine && (selectedVideo.tts_engine.includes('neural') || selectedVideo.tts_engine.includes('elevenlabs')) ? 'NEURAL' : 'FALLBACK')}
-                    </span>
-                  </h3>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">TTS Provider:</span>
-                      <span className="font-semibold text-indigo-300">
-                        {selectedVideo.tts_provider || (selectedVideo.tts_engine?.includes('elevenlabs') ? 'ElevenLabs' : selectedVideo.tts_engine?.includes('neural') ? 'Neural TTS' : 'Local Fallback')}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Voice:</span>
-                      <span className="font-mono text-slate-200">
-                        {selectedVideo.voice || 'en-US-AndrewNeural'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Voice Quality:</span>
-                      <span className={`font-semibold ${
-                        selectedVideo.voice_quality === 'NEURAL' || (selectedVideo.tts_engine && (selectedVideo.tts_engine.includes('neural') || selectedVideo.tts_engine.includes('elevenlabs')))
-                          ? 'text-emerald-400'
-                          : 'text-amber-400'
-                      }`}>
-                        {selectedVideo.voice_quality || (selectedVideo.tts_engine && (selectedVideo.tts_engine.includes('neural') || selectedVideo.tts_engine.includes('elevenlabs')) ? 'NEURAL' : 'FALLBACK')}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Speaking Rate:</span>
-                      <span className="font-mono text-slate-300">
-                        {selectedVideo.speaking_rate || '140 WPM'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Audio Quality:</span>
-                      <span className="font-semibold text-emerald-400">
-                        {selectedVideo.audio_quality || 'PASS'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Scenes with Narration:</span>
-                      <span className="font-mono font-semibold text-emerald-400">
-                        {selectedVideo.scenes?.filter(s => s.narration_text && s.narration_text.trim().length > 0).length || 0} / {selectedVideo.scenes?.length || 0}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Audio Duration:</span>
-                      <span className="font-mono font-semibold text-emerald-400">
-                        {formatSec(selectedVideo.actual_duration_seconds)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Narration Coverage:</span>
-                      <span className="font-semibold text-emerald-400 font-mono">
-                        {selectedVideo.scenes && selectedVideo.scenes.length > 0
-                          ? `${Math.round((selectedVideo.scenes.filter(s => s.narration_text && s.narration_text.trim().length > 0).length / selectedVideo.scenes.length) * 100)}%`
-                          : '100%'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Thumbnail Card */}
-                {selectedVideo.thumbnail_url && (
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-2">
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                      Video Thumbnail
-                    </h3>
-                    <img
-                      src={selectedVideo.thumbnail_url}
-                      alt="Thumbnail"
-                      className="w-full aspect-video object-cover rounded-lg border border-slate-700"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* SCENES BREAKDOWN */}
-            <div className="space-y-4 pt-4 border-t border-slate-800">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-white">Educational Scenes Breakdown</h3>
-                  <p className="text-xs text-slate-400">
-                    Individual timed scene components composed with visual cue slides and narration.
-                  </p>
-                </div>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">
-                  {selectedVideo.scenes?.length || 0} Scenes Total
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {selectedVideo.scenes && selectedVideo.scenes.length > 0 ? (
-                  selectedVideo.scenes.map((scene) => (
-                    <div
-                      key={scene.scene_number}
-                      onClick={() => setSelectedScene(scene)}
-                      className="bg-slate-900/50 border border-slate-800 hover:border-indigo-500/60 rounded-xl p-4 cursor-pointer transition space-y-2.5 flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                            SCENE {String(scene.scene_number).padStart(2, '0')} • {scene.section_type}
-                          </span>
-                          <span className="text-[11px] font-mono text-slate-400">
-                            ⏱ {scene.estimated_duration_seconds}s
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-semibold text-slate-200 line-clamp-1">{scene.title}</h4>
-                        <p className="text-xs text-slate-400 line-clamp-3 mt-1 leading-relaxed">
-                          {scene.narration_text}
-                        </p>
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
-                        <span className="px-1.5 py-0.5 rounded bg-slate-800 font-mono text-[10px] text-slate-300">
-                          {scene.visual_type}
-                        </span>
-                        <span>
-                          {formatSec(scene.start_time_seconds)} → {formatSec(scene.end_time_seconds)}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="col-span-3 p-8 text-center text-xs text-slate-500 bg-slate-900/30 rounded-xl border border-dashed border-slate-800">
-                    No scenes generated yet. Generate the video to compile scene definitions.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
-            Select a video from the sidebar to inspect and review.
-          </div>
-        )}
-      </div>
-
       {/* REGENERATION CONFIRMATION MODAL */}
-      {showRegenModal && selectedVideo && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>⚠️</span> Confirm Video Regeneration
-            </h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Regenerating video for <strong className="text-white">"{selectedVideo.title}"</strong> will synthesize new narration audio and compose a new MP4 video.
-            </p>
-            <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-[11px] space-y-1 text-slate-400">
-              <div>• Current Version: <span className="text-slate-200 font-mono">v{selectedVideo.version_number}</span></div>
-              <div>• Previous version will be archived as <span className="text-amber-400 font-mono">SUPERSEDED</span>.</div>
-              <div>• Status will reset to <span className="text-indigo-400 font-mono">REVIEW</span> until approved again.</div>
+      <Modal
+        open={showRegenModal && !!selectedVideo}
+        onClose={() => setShowRegenModal(false)}
+        title="Confirm Video Regeneration"
+        maxWidth={480}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setShowRegenModal(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="adm-btn adm-btn-primary"
+              onClick={handleRegenerateConfirm}
+              disabled={actionLoading}
+            >
+              Confirm Regeneration
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', lineHeight: '20px', margin: 0 }}>
+            Regenerating video for <strong style={{ color: 'var(--admin-text)' }}>"{selectedVideo?.title}"</strong> will synthesize new narration audio and compose a new MP4 video.
+          </p>
+          <div
+            style={{
+              backgroundColor: 'var(--admin-bg)',
+              border: '1px solid var(--admin-border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '10px 12px',
+              fontSize: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              color: 'var(--admin-text-secondary)',
+            }}
+          >
+            <div>
+              • Current Version: <span style={{ fontFamily: MONO_FONT, color: 'var(--admin-text)', fontWeight: 600 }}>v{selectedVideo?.version_number}</span>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowRegenModal(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRegenerateConfirm}
-                disabled={actionLoading}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition shadow-lg shadow-indigo-600/30"
-              >
-                Confirm Regeneration
-              </button>
+            <div>
+              • Previous version will be archived as <span style={{ fontFamily: MONO_FONT, color: 'var(--admin-warning)', fontWeight: 600 }}>SUPERSEDED</span>.
+            </div>
+            <div>
+              • Status will reset to <span style={{ fontFamily: MONO_FONT, color: 'var(--admin-primary)', fontWeight: 600 }}>REVIEW</span> until approved again.
             </div>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* SCENE DETAIL MODAL */}
-      {selectedScene && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400">
-                  SCENE {String(selectedScene.scene_number).padStart(2, '0')}
-                </span>
-                <h3 className="text-base font-bold text-white">{selectedScene.title}</h3>
-              </div>
-              <button onClick={() => setSelectedScene(null)} className="text-slate-400 hover:text-white">✕</button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                  Narration Script
-                </span>
-                <p className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-slate-200 leading-relaxed">
-                  {selectedScene.narration_text}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                  <span className="text-slate-400 block text-[10px]">Visual Type</span>
-                  <span className="font-semibold text-indigo-300">{selectedScene.visual_type}</span>
-                </div>
-                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                  <span className="text-slate-400 block text-[10px]">Estimated Duration</span>
-                  <span className="font-semibold text-emerald-300">{selectedScene.estimated_duration_seconds}s</span>
-                </div>
-              </div>
-
-              {selectedScene.formula && (
-                <div>
-                  <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider block mb-1">
-                    Mathematical Formula
-                  </span>
-                  <div className="bg-slate-950 p-2.5 rounded-lg border border-amber-500/30 font-mono text-amber-300">
-                    {selectedScene.formula}
-                  </div>
-                </div>
-              )}
-
-              {selectedScene.on_screen_text && (
-                <div>
-                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                    On-Screen Text
-                  </span>
-                  <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-slate-300 whitespace-pre-line">
-                    {selectedScene.on_screen_text}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setSelectedScene(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition"
+      <Modal
+        open={!!selectedScene}
+        onClose={() => setSelectedScene(null)}
+        title={
+          selectedScene ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+              <span
+                className="adm-badge"
+                style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)', fontFamily: MONO_FONT }}
               >
-                Close
-              </button>
+                SCENE {String(selectedScene.scene_number).padStart(2, '0')}
+              </span>
+              {selectedScene.title}
+            </span>
+          ) : (
+            'Scene'
+          )
+        }
+        maxWidth={520}
+        footer={
+          <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setSelectedScene(null)}>
+            Close
+          </button>
+        }
+      >
+        {selectedScene && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px' }}>
+            <div>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
+                Narration Script
+              </span>
+              <p
+                style={{
+                  backgroundColor: 'var(--admin-bg)',
+                  border: '1px solid var(--admin-border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 12px',
+                  color: 'var(--admin-text)',
+                  lineHeight: '20px',
+                  margin: 0,
+                }}
+              >
+                {selectedScene.narration_text}
+              </p>
             </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+              <div style={{ backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', borderRadius: 'var(--radius-md)', padding: '10px' }}>
+                <span style={{ color: 'var(--admin-text-secondary)', display: 'block', fontSize: '10px', marginBottom: '2px' }}>Visual Type</span>
+                <span style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{selectedScene.visual_type}</span>
+              </div>
+              <div style={{ backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', borderRadius: 'var(--radius-md)', padding: '10px' }}>
+                <span style={{ color: 'var(--admin-text-secondary)', display: 'block', fontSize: '10px', marginBottom: '2px' }}>Estimated Duration</span>
+                <span style={{ fontWeight: 600, color: 'var(--admin-success)' }}>{selectedScene.estimated_duration_seconds}s</span>
+              </div>
+            </div>
+
+            {selectedScene.formula && (
+              <div>
+                <span style={{ display: 'block', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--admin-warning)', marginBottom: '4px' }}>
+                  Mathematical Formula
+                </span>
+                <div
+                  style={{
+                    backgroundColor: 'var(--admin-warning-soft)',
+                    border: '1px solid #FDE68A',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px',
+                    fontFamily: MONO_FONT,
+                    color: 'var(--admin-warning)',
+                  }}
+                >
+                  {selectedScene.formula}
+                </div>
+              </div>
+            )}
+
+            {selectedScene.on_screen_text && (
+              <div>
+                <span style={{ display: 'block', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
+                  On-Screen Text
+                </span>
+                <div
+                  style={{
+                    backgroundColor: 'var(--admin-bg)',
+                    border: '1px solid var(--admin-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px',
+                    color: 'var(--admin-text)',
+                    whiteSpace: 'pre-line',
+                  }}
+                >
+                  {selectedScene.on_screen_text}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };

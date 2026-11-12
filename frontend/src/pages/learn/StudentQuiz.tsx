@@ -3,7 +3,7 @@ import { SurfacePanel } from '../../components/SurfacePanel';
 import { QuizOptionCard } from '../../components/QuizOptionCard';
 import { ScoreSummaryCard } from '../../components/ScoreSummaryCard';
 import { api } from '../../lib/api';
-import { TopicQuiz, QuizSubmissionResult, QuestionResultItem } from '../../lib/types';
+import { TopicQuiz, QuizSubmissionResult, QuestionResultItem, DetailedQuizResult } from '../../lib/types';
 
 interface StudentQuizProps {
   onNavigate: (route: string, params?: any) => void;
@@ -21,6 +21,8 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
   const [recommendation, setRecommendation] = useState<string>('');
   const [adaptiveRecommended, setAdaptiveRecommended] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [attemptHistory, setAttemptHistory] = useState<DetailedQuizResult[]>([]);
 
   useEffect(() => {
     const fetchQuiz = async () => {
@@ -61,6 +63,7 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
     if (!quiz) return;
     try {
       setSubmitting(true);
+      setSubmitError(null);
       const numericAnswers: Record<string, number> = {};
       for (const [qId, letter] of Object.entries(selectedAnswers)) {
         numericAnswers[qId] = letter.charCodeAt(0) - 65;
@@ -78,8 +81,15 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
       setDetailedBreakdown(res.question_results || []);
       setRecommendation(res.recommendation || '');
       setAdaptiveRecommended(res.adaptive_recommended || !res.passed);
+      // PHASE 3B: load the student's full attempt history for this quiz
+      try {
+        const history = await api.getStudentQuizAttempts(quiz.id);
+        setAttemptHistory(Array.isArray(history) ? history : []);
+      } catch {
+        // History is best-effort; the primary result is already displayed
+      }
     } catch (err: any) {
-      alert(`Submission failed: ${err.message}`);
+      setSubmitError(err?.message || 'Submission failed. Your answers were not graded — please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -90,6 +100,7 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
     setCurrentIdx(0);
     setResult(null);
     setDetailedBreakdown([]);
+    setSubmitError(null);
   };
 
   if (error) {
@@ -137,6 +148,44 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
           <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#EEF2FF', border: '1px solid #C7D2FE', color: '#3730A3', fontSize: '14px' }}>
             <strong>💡 Recommendation: </strong> {recommendation}
           </div>
+        )}
+
+        {/* PHASE 3B: Attempt history for this quiz */}
+        {attemptHistory.length > 0 && (
+          <SurfacePanel>
+            <div style={{ padding: '4px 0' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#1E293B', marginBottom: '12px' }}>
+                Attempt History ({attemptHistory.length})
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {attemptHistory.map((att, idx) => (
+                  <div
+                    key={att.attempt_id || idx}
+                    style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '10px 14px', borderRadius: '8px',
+                      backgroundColor: att.passed ? '#F0FDF4' : '#FEF2F2',
+                      border: `1px solid ${att.passed ? '#BBF7D0' : '#FECACA'}`,
+                      fontSize: '13px', color: '#334155',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>
+                      Attempt #{att.attempt_id || att.id}
+                    </span>
+                    <span>
+                      {att.percentage}% • {att.score}/{att.total_questions} correct •{' '}
+                      <strong style={{ color: att.passed ? '#16A34A' : '#DC2626' }}>
+                        {att.passed ? 'PASSED' : 'NEEDS PRACTICE'}
+                      </strong>
+                    </span>
+                    <span style={{ fontSize: '12px', color: '#64748B' }}>
+                      {att.submitted_at ? new Date(att.submitted_at).toLocaleString() : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </SurfacePanel>
         )}
 
         {/* Detailed Question Review Breakdown */}
@@ -231,6 +280,17 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
           />
         </div>
       </div>
+
+      {submitError && (
+        <div style={{
+          maxWidth: '720px', margin: '0 auto',
+          padding: '12px 16px', borderRadius: '10px',
+          backgroundColor: '#FEF2F2', border: '1px solid #FECACA',
+          color: '#B91C1C', fontSize: '13px', fontWeight: 500,
+        }}>
+          ⚠ {submitError}
+        </div>
+      )}
 
       {/* Question Card */}
       <SurfacePanel>

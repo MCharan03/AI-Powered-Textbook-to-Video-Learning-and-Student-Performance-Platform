@@ -24,6 +24,216 @@ class AIProviderUnavailableError(Exception):
 
 
 # ==============================================================================
+# SHARED SOURCE-CONTENT ANALYSIS HELPERS (used by script & quiz grounding)
+# ==============================================================================
+
+# Common English function words ignored when ranking content-bearing terms.
+STOPWORDS = {
+    "the", "and", "for", "are", "but", "not", "you", "all", "any", "can", "her",
+    "was", "one", "our", "out", "day", "get", "has", "him", "his", "how", "its",
+    "new", "now", "old", "see", "two", "way", "who", "boy", "did", "use", "may",
+    "say", "each", "she", "which", "their", "said", "will", "about", "they",
+    "that", "this", "with", "from", "have", "were", "been", "when", "then",
+    "than", "them", "these", "those", "into", "onto", "also", "such", "like",
+    "some", "only", "over", "more", "most", "very", "much", "many", "other",
+    "after", "before", "between", "both", "under", "again", "further", "once",
+    "here", "there", "where", "why", "what", "your", "yours", "shall", "should",
+    "could", "would", "might", "must", "shall", "using", "used", "upon", "while",
+    "because", "within", "without", "every", "give", "given", "take", "takes",
+    "make", "makes", "made", "example", "examples", "figure", "table", "chapter",
+    "topic", "page", "pages", "section", "note", "thus", "hence", "since",
+    "being", "does", "done", "same", "even", "well", "just", "still", "often",
+    "however", "therefore", "following", "follows", "show", "shows", "shown",
+    "find", "finds", "let", "lets", "first", "second", "third", "next", "last",
+    "another", "case", "cases", "different", "various", "several", "number",
+    "value", "values", "point", "points", "term", "terms", "called", "call"
+}
+
+
+def split_sentences(text: str) -> List[str]:
+    """Split raw textbook text into individual sentences, ignoring headings."""
+    if not text:
+        return []
+    # Normalize whitespace and strip heading-like standalone lines first
+    cleaned_lines: List[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Skip headings / numbering artifacts (ALL CAPS lines, "Chapter 3", "7.1", page numbers)
+        if re.fullmatch(r"[\d\s\.\-]+", line):
+            continue
+        if len(line) > 4 and line.isupper():
+            continue
+        # Skip running headers/footers ("Exploration|Grade 9 ...", "Title ... 117")
+        if "Exploration|" in line or re.match(r"^.{10,80}?\s\d{2,3}$", line):
+            continue
+        if re.fullmatch(r"(chapter|section|topic|subtopic)\s+\d+(\.\d+)*.*", line, re.IGNORECASE) and len(line) < 80:
+            continue
+        cleaned_lines.append(line)
+    joined = " ".join(cleaned_lines)
+    # Protect common abbreviations from being split
+    joined = re.sub(r"\b(e\.g|i\.e|etc|vs|fig|approx|no)\.", lambda m: m.group(1) + "<DOT>", joined, flags=re.IGNORECASE)
+    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", joined)
+    sentences: List[str] = []
+    for part in parts:
+        part = part.replace("<DOT>", ".").strip()
+        part = re.sub(r"\s+", " ", part)
+        # Trim bullet markers / stray leading symbols
+        part = re.sub(r"^[\u2022\u25cf\u25aa\-\*\u2013\u2014o]\s+", "", part)
+        if part and 20 <= len(part) <= 340:
+            sentences.append(part)
+
+    # Merge fragments that were cut at figure references ("... shown in Fig.")
+    # so narration doesn't end mid-reference; drop repeated feature headers.
+    merged: List[str] = []
+    for s in sentences:
+        if merged and re.search(r"(?:\bFig\.|\bExample\s+\d+\.\d+\s*:\s*[^:]{0,60})$", merged[-1].strip()):
+            prev = merged.pop()
+            s = f"{prev} {s}"
+        if re.match(r"^(Ready to Go Beyond|Meet a Scientist|Think Like a Scientist|Explore|Journey Beyond)\b", s) and len(s) < 90:
+            continue
+        if not (20 <= len(s) <= 340):
+            continue
+        merged.append(s)
+    return merged
+
+
+def extract_page_sentences(source_pages: List[Dict[str, Any]]) -> List[Tuple[int, str]]:
+    """
+    Convert source pages into page-attributed sentences.
+    Returns list of (page_number, sentence) tuples in reading order.
+    """
+    result: List[Tuple[int, str]] = []
+    for p in source_pages or []:
+        page_num = p.get("page_number") or 0
+        for s in split_sentences(p.get("text", "")):
+            result.append((page_num, s))
+    return result
+
+
+def clean_sentence_for_narration(sentence: str) -> str:
+    """Make a textbook sentence safe and natural for spoken narration."""
+    s = re.sub(r"\s+", " ", sentence).strip()
+    s = re.sub(r"[\[\]{}|<>#~`^_]+", " ", s)          # strip markup-ish glyphs
+    s = re.sub(r"\u2192|\b->\b", " gives ", s)         # arrows → "gives"
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    if s and s[-1] not in ".!?":
+        s += "."
+    return s
+
+
+def shorten_sentence(sentence: str, max_words: int = 24) -> str:
+    """Shorten a sentence for on-screen/option text while keeping whole words."""
+    words = sentence.split()
+    if len(words) <= max_words:
+        return sentence.rstrip(". ")
+    return " ".join(words[:max_words]).rstrip(",;:") + "…"
+
+
+def extract_key_terms(text: str, top_n: int = 8) -> List[str]:
+    """
+    Frequency-ranked content terms from real source text.
+    Prefers multi-word technical phrases and capitalized mid-sentence terms.
+    """
+    if not text:
+        return []
+    counts: Dict[str, int] = {}
+
+    # Multi-word phrases (2-3 content words adjacent) get a weight boost
+    phrase_candidates = re.findall(r"\b([A-Za-z][A-Za-z\-']+(?:\s+[A-Za-z][A-Za-z\-']+){1,2})\b", text)
+    for phrase in phrase_candidates:
+        words = phrase.lower().split()
+        if any(w in STOPWORDS for w in words):
+            continue
+        if all(len(w) >= 3 for w in words):
+            counts[phrase.lower()] = counts.get(phrase.lower(), 0) + 3
+
+    # Single content words
+    for w in re.findall(r"\b[A-Za-z][A-Za-z\-']+\b", text):
+        lw = w.lower()
+        if lw in STOPWORDS or len(lw) < 4:
+            continue
+        counts[lw] = counts.get(lw, 0) + 1
+
+    # Capitalized mid-sentence words (likely technical terms) get a boost
+    mid_capitals = re.findall(r"(?<![.!?]\s)(?<!^)\b([A-Z][a-z]{3,})\b", text)
+    for w in mid_capitals:
+        lw = w.lower()
+        if lw not in STOPWORDS:
+            counts[lw] = counts.get(lw, 0) + 2
+
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    terms: List[str] = []
+    for term, _ in ranked:
+        if any(term in t or t in term for t in terms):
+            continue
+        terms.append(term)
+        if len(terms) >= top_n:
+            break
+    return terms
+
+
+# Sentence categories used to ground each pedagogical section in real content
+_DEFINITION_RE = re.compile(
+    r"\b(is|are|refers to|is defined as|are defined as|means|denotes|known as|called)\b", re.IGNORECASE
+)
+_PROCEDURE_RE = re.compile(
+    r"\b(when|if|then|because|therefore|thus|step|process|occurs|apply|applied|increase|decrease|"
+    r"first|second|next|finally|follows|result|results|causes|produces)\b", re.IGNORECASE
+)
+_EXAMPLE_RE = re.compile(
+    r"\b(example|for instance|consider|suppose|such as|for example|e\.g|calculate|compute|find the)\b",
+    re.IGNORECASE,
+)
+_APPLICATION_RE = re.compile(
+    r"\b(used|useful|application|applications|practical|everyday|real.?world|industry|industrial|"
+    r"engineering|daily|life|machines|devices|technology)\b", re.IGNORECASE
+)
+
+
+def classify_page_sentences(page_sentences: List[Tuple[int, str]]) -> Dict[str, List[Tuple[int, str]]]:
+    """Group page-attributed sentences into pedagogical categories."""
+    buckets: Dict[str, List[Tuple[int, str]]] = {
+        "definitions": [], "procedures": [], "examples": [],
+        "applications": [], "numeric": [], "general": [],
+    }
+    for page_num, s in page_sentences:
+        entry = (page_num, s)
+        has_digit = bool(re.search(r"\d", s))
+        if _DEFINITION_RE.search(s):
+            buckets["definitions"].append(entry)
+        if _PROCEDURE_RE.search(s):
+            buckets["procedures"].append(entry)
+        if _EXAMPLE_RE.search(s):
+            buckets["examples"].append(entry)
+        if _APPLICATION_RE.search(s):
+            buckets["applications"].append(entry)
+        if has_digit:
+            buckets["numeric"].append(entry)
+        buckets["general"].append(entry)
+    return buckets
+
+
+def dedupe_entries(entries: List[Tuple[int, str]], used_keys: set) -> List[Tuple[int, str]]:
+    """Filter out entries whose normalized sentence was already used.
+    NOTE: does NOT mark entries as used — callers mark only what they consume."""
+    result: List[Tuple[int, str]] = []
+    for page_num, s in entries:
+        key = re.sub(r"\W+", " ", s.lower()).strip()
+        if key in used_keys:
+            continue
+        result.append((page_num, s))
+    return result
+
+
+def mark_entries_used(entries: List[Tuple[int, str]], used_keys: set) -> None:
+    """Mark entries as consumed so later sections don't reuse the same sentences."""
+    for page_num, s in entries:
+        used_keys.add(re.sub(r"\W+", " ", s.lower()).strip())
+
+
+# ==============================================================================
 # SCRIPT GENERATION ENGINE PROTOCOL & FACTORY
 # ==============================================================================
 
@@ -95,10 +305,9 @@ class DeterministicScriptGenerationEngine:
         # Detect formulas in source text
         formulas = self._extract_formulas_and_terms(combined_source_text)
 
-        # Parse key technical keywords from source text & outline
-        clean_words = re.findall(r"\b[A-Za-z]{4,}\b", combined_source_text)
-        distinct_keywords = list(dict.fromkeys(clean_words))[:20]
-        keyword_str = ", ".join(distinct_keywords[:6]) if distinct_keywords else video.title
+        # Parse key technical keywords from source text (frequency-ranked, stopword-filtered)
+        key_terms_all = extract_key_terms(combined_source_text, top_n=20)
+        keyword_str = ", ".join(key_terms_all[:6]) if key_terms_all else video.title
 
         # Determine outline items
         outline_items = video.content_outline or [
@@ -109,9 +318,12 @@ class DeterministicScriptGenerationEngine:
 
         mid_page = (start_p + end_p) // 2
 
-        # Check if this is an Array / Data Structure topic
-        full_topic_context = f"{video.title} {video.topic.title if video.topic else ''} {combined_source_text}".lower()
-        is_array_topic = any(k in full_topic_context for k in ["array", "dynamic sizing", "static array", "dynamic array", "contiguous memory"])
+        # Check if this is an Array / Data Structure topic.
+        # NOTE: only trigger the hard-coded array lesson when the plan itself is about
+        # arrays (title/topic), NOT when the word merely appears somewhere in the
+        # source pages of an unrelated subject.
+        title_context = f"{video.title} {video.topic.title if video.topic else ''}".lower()
+        is_array_topic = any(k in title_context for k in ["array", "dynamic sizing", "static array", "dynamic array", "contiguous memory"])
 
         sections: List[Dict[str, Any]] = []
 
@@ -401,26 +613,79 @@ class DeterministicScriptGenerationEngine:
 
         else:
             # ==================================================================
-            # GENERAL TOPIC-SPECIFIC EDUCATIONAL SCRIPT (9 SECTIONS)
+            # CONTENT-GROUNDED GENERAL EDUCATIONAL SCRIPT (9 SECTIONS)
+            # Every narration section is derived from the actual extracted
+            # textbook page text (page-attributed sentences), woven together in
+            # a natural teacher voice rather than read verbatim as a lecture.
             # ==================================================================
             topic_name = video.topic.title if video.topic else video.title
             chapter_name = video.topic.chapter.title if video.topic and video.topic.chapter else "Core Concepts"
             learning_obj = video.learning_objective or f"Understand, analyze, and apply core principles of {video.title}."
 
-            # 1. INTRO
-            intro_narration = (
-                f"Welcome to this educational lesson on {video.title}, part of our study of {chapter_name}. "
-                f"In this module, we explore how {video.title} operates as a foundational mechanism in {topic_name}. "
-                f"As documented in our textbook source material across pages {start_p} to {end_p}, mastering these concepts enables us to solve practical engineering and scientific problems. "
-                f"Throughout this video, we will focus directly on the principles established in the textbook, "
-                f"examining core definitions, step-by-step mechanics, concrete examples, and common pitfalls. Let's get started."
+            page_sentences = extract_page_sentences(source_pages)
+            key_terms = extract_key_terms(combined_source_text, top_n=8)
+            buckets = classify_page_sentences(page_sentences)
+            used_keys: set = set()
+            primary_term = key_terms[0] if key_terms else topic_name
+            secondary_term = key_terms[1] if len(key_terms) > 1 else topic_name
+
+            # Per-section share of the total target word budget (sums to ~1.0)
+            budgets = {1: 0.09, 2: 0.16, 3: 0.15, 4: 0.12, 5: 0.14, 6: 0.10, 7: 0.09, 8: 0.07, 9: 0.08}
+
+            def pick(category: str, budget_words: float, fallbacks: Optional[List[str]] = None) -> List[Tuple[int, str]]:
+                """Select unused page-attributed sentences from a category to fill a word budget."""
+                pool: List[Tuple[int, str]] = list(buckets.get(category, []))
+                for fb in (fallbacks or []):
+                    pool.extend(buckets.get(fb, []))
+                pool = dedupe_entries(pool, used_keys)
+                chosen: List[Tuple[int, str]] = []
+                words_acc = 0.0
+                for entry in pool:
+                    w = len(entry[1].split())
+                    if w > 70:  # very long sentences hurt narration pacing
+                        continue
+                    if chosen and words_acc + w > budget_words * 1.35:
+                        break
+                    chosen.append(entry)
+                    words_acc += w
+                    if words_acc >= budget_words * 0.85:
+                        break
+                mark_entries_used(chosen, used_keys)
+                return chosen
+
+            def weave(framing: List[str], entries: List[Tuple[int, str]]) -> Tuple[str, List[int], List[str]]:
+                """Blend teacher framing lines with grounded textbook sentences."""
+                parts = list(framing)
+                pages_used: List[int] = []
+                grounded: List[str] = []
+                for page_num, s in entries:
+                    cleaned = clean_sentence_for_narration(s)
+                    parts.append(cleaned)
+                    grounded.append(cleaned)
+                    if page_num and page_num not in pages_used:
+                        pages_used.append(page_num)
+                return " ".join(parts), pages_used, grounded
+
+            # ---------- 1. INTRO ----------
+            intro_budget = target_words * budgets[1]
+            intro_entries = pick("definitions", intro_budget * 0.5, fallbacks=["general"])
+            intro_pages: List[int] = []
+            intro_grounded: List[str] = []
+            intro_narration, intro_pages, intro_grounded = weave(
+                [
+                    f"Hello everyone, and welcome to today's lesson on {video.title}.",
+                    f"This session is part of our chapter on {chapter_name}, and we'll be drawing directly from pages {start_p} through {end_p} of the textbook.",
+                    f"By the end, you should be able to {learning_obj[0].lower() + learning_obj[1:] if learning_obj else ''}".rstrip(".") + ".",
+                    f"As we go, keep an eye on the key ideas we'll keep coming back to: {keyword_str}.",
+                ],
+                intro_entries,
             )
             sections.append({
                 "section_id": 1,
                 "type": "INTRO",
                 "title": f"Introduction to {video.title}",
                 "narration": intro_narration,
-                "source_pages": [start_p],
+                "source_pages": intro_pages or [start_p],
                 "visual_type": "TITLE_CARD",
                 "visual_description": f"High-contrast title card displaying '{video.title}' with subject context and academic badge.",
                 "on_screen_text": f"{video.title}\n{academic_level}",
@@ -429,219 +694,289 @@ class DeterministicScriptGenerationEngine:
                 "animation_hint": "FADE_IN_TITLE",
                 "visual_data": {
                     "subtitle": f"{chapter_name} • {topic_name}",
-                    "objectives": [learning_obj]
+                    "objectives": [learning_obj] + [shorten_sentence(s, 12) for _, s in intro_entries[:2]]
                 }
             })
 
-            # 2. CORE CONCEPT
-            concept_narration = (
-                f"Let us begin with our first essential concept: {outline_items[0] if outline_items else video.title}. "
-                f"The textbook establishes that {video.title} is governed by specific theoretical rules and definitions. "
-                f"Specifically, we focus on {keyword_str}. "
-                f"In educational and practical contexts, understanding the underlying intuition allows us to predict system behavior accurately. "
-                f"Take note of the formal definition provided on textbook page {start_p}, which establishes the baseline for all subsequent analysis. "
-                f"By keeping these fundamental properties in mind, we can avoid common misunderstandings as we proceed."
+            # ---------- 2. CORE CONCEPT (definitions from the source) ----------
+            concept_budget = target_words * budgets[2]
+            concept_entries = pick("definitions", concept_budget, fallbacks=["general"])
+            concept_narration, concept_pages, concept_grounded = weave(
+                [
+                    f"Let's start with the heart of the matter: what exactly is {primary_term}?",
+                    "The textbook gives us a clear picture of this, so let me unpack it for you.",
+                    "Here's the key idea.",
+                ],
+                concept_entries,
             )
             sections.append({
                 "section_id": 2,
                 "type": "CONCEPT",
-                "title": f"Core Foundations: {outline_items[0] if outline_items else video.title}",
+                "title": f"Core Concept: {outline_items[0] if outline_items else video.title}",
                 "narration": concept_narration,
-                "source_pages": [start_p],
+                "source_pages": concept_pages or [start_p],
                 "visual_type": "SUMMARY_CHIPS",
-                "visual_description": f"Clear presentation slide highlighting primary terminology and definitions of {video.title}.",
-                "on_screen_text": f"Foundations:\n• {outline_items[0] if outline_items else video.title}\n• Grounded in Textbook Page {start_p}",
+                "visual_description": f"Presentation slide highlighting primary terminology and definitions of {video.title} drawn from the textbook.",
+                "on_screen_text": "Key Definitions:\n" + "\n".join(
+                    f"• {shorten_sentence(s, 14)}" for _, s in concept_entries[:3]
+                ) if concept_entries else f"Foundations of {video.title}\n• Grounded in Textbook Page {start_p}",
                 "formula": formulas[0][0] if formulas else None,
                 "diagram_description": None,
                 "animation_hint": "HIGHLIGHT_NODES",
                 "visual_data": {}
             })
 
-            # 3. HOW IT WORKS
-            how_narration = (
-                f"How does {video.title} function in practice? "
-                f"The textbook outlines the step-by-step mechanics governing this topic on page {mid_page}. "
-                f"First, the system initializes its baseline state according to predefined boundary conditions. "
-                f"Second, when external inputs or operations occur, the governing principles dictate how each component responds. "
-                f"Third, the resulting state is updated predictably and verified against theoretical constraints. "
-                f"Understanding this step-by-step progression ensures that we can trace any calculation or system behavior from first principles."
+            # ---------- 3. HOW IT WORKS (procedural sentences) ----------
+            how_budget = target_words * budgets[3]
+            how_entries = pick("procedures", how_budget, fallbacks=["general"])
+            how_narration, how_pages, how_grounded = weave(
+                [
+                    f"Now that we know what it is, let's walk through how {primary_term} actually works.",
+                    "I'll break this down the same way the textbook does, step by step.",
+                ],
+                how_entries,
             )
             sections.append({
                 "section_id": 3,
                 "type": "HOW_IT_WORKS",
                 "title": f"How It Works: Step-by-Step Mechanics",
                 "narration": how_narration,
-                "source_pages": [mid_page],
+                "source_pages": how_pages or [mid_page],
                 "visual_type": "SUMMARY_CHIPS",
-                "visual_description": f"Step-by-step breakdown illustrating operational mechanics of {video.title}.",
-                "on_screen_text": f"Mechanics of {video.title}:\n1. Initialize baseline state\n2. Apply governing principles\n3. Verify resulting state",
+                "visual_description": f"Step-by-step breakdown of the mechanics of {video.title}, based on the textbook's own explanation.",
+                "on_screen_text": f"Mechanics of {video.title}:\n" + "\n".join(
+                    f"{i}. {shorten_sentence(s, 12)}" for i, (_, s) in enumerate(how_entries[:3], start=1)
+                ) if how_entries else f"Mechanics of {video.title}:\n1. Grounded in textbook pages {mid_page}-{end_p}",
                 "formula": None,
                 "diagram_description": None,
                 "animation_hint": "STEP_HIGHLIGHT",
                 "visual_data": {}
             })
 
-            # 4. CONCRETE EXAMPLE
-            concrete_narration = (
-                f"To solidify our understanding, let's explore a concrete example from textbook page {mid_page}. "
-                f"Consider a realistic scenario involving {outline_items[1] if len(outline_items) > 1 else video.title}. "
-                f"We begin with explicitly defined input values. "
-                f"Applying our core governing rules, we evaluate each parameter sequentially without guessing. "
-                f"Notice how each step directly matches the documented rules in our textbook source. "
-                f"By analyzing this concrete case, we can observe exactly how theoretical equations translate into real-world values."
+            # ---------- 4. CONCRETE EXAMPLE (example/numeric sentences) ----------
+            example_budget = target_words * budgets[4]
+            example_entries = pick("examples", example_budget, fallbacks=["numeric", "general"])
+            example_narration, example_pages, example_grounded = weave(
+                [
+                    "Concepts only stick when you see them in action, so let's make this concrete.",
+                    "Here's an example straight from the source material.",
+                ],
+                example_entries,
             )
             sections.append({
                 "section_id": 4,
                 "type": "CONCRETE_EXAMPLE",
                 "title": f"Concrete Example: {video.title}",
-                "narration": concrete_narration,
-                "source_pages": [mid_page],
-                "visual_type": "CODE_SNIPPET" if any(k in video.title.lower() for k in ["code", "algorithm", "programming"]) else "SUMMARY_CHIPS",
-                "visual_description": "Detailed trace showing concrete input values and step-by-step progression.",
-                "on_screen_text": f"Concrete Case:\n1. Known Inputs\n2. Step-by-Step Trace\n3. Verified Result",
+                "narration": example_narration,
+                "source_pages": example_pages or [mid_page],
+                "visual_type": "CODE_SNIPPET" if any(k in title_context for k in ["code", "algorithm", "programming"]) else "SUMMARY_CHIPS",
+                "visual_description": "Concrete worked illustration using the actual quantities and scenarios from the textbook.",
+                "on_screen_text": "From the Textbook:\n" + "\n".join(
+                    f"• {shorten_sentence(s, 14)}" for _, s in example_entries[:3]
+                ) if example_entries else f"Concrete Case (Page {mid_page}):\n• See worked example",
                 "formula": None,
                 "diagram_description": None,
                 "animation_hint": "STEP_HIGHLIGHT",
                 "visual_data": {}
             })
 
-            # 5. WORKED EXAMPLE
-            worked_narration = (
-                f"Now let us work through a complete problem step by step from page {end_p}. "
-                f"Step one: we carefully extract the known variables and boundary conditions directly from the problem statement. "
-                f"Step two: we select the appropriate governing relationship and substitute our values methodically. "
-                f"Step three: we compute the intermediate transformations and verify that every unit and invariant remains consistent. "
-                f"Step four: we validate that our final outcome satisfies all physical and theoretical boundaries. "
-                f"Practicing this structured method ensures complete accuracy during coursework and examinations."
+            # ---------- 5. WORKED EXAMPLE (numeric content) ----------
+            worked_budget = target_words * budgets[5]
+            worked_entries = pick("numeric", worked_budget, fallbacks=["procedures", "general"])
+            worked_narration, worked_pages, worked_grounded = weave(
+                [
+                    f"Time to put this into practice. Follow along with me, and notice how every number comes from the textbook itself.",
+                ],
+                worked_entries,
             )
             sections.append({
                 "section_id": 5,
                 "type": "WORKED_EXAMPLE",
                 "title": "Worked Example & Analysis",
                 "narration": worked_narration,
-                "source_pages": [end_p],
+                "source_pages": worked_pages or [end_p],
                 "visual_type": "SUMMARY_CHIPS",
-                "visual_description": "Structured step-by-step problem-solving walkthrough.",
-                "on_screen_text": "Worked Problem Analysis:\nStep 1: Extract Knowns\nStep 2: Apply Governing Rule\nStep 3: Calculate & Verify",
+                "visual_description": "Structured walkthrough of the textbook's own numerical example with quantities and units.",
+                "on_screen_text": "Worked Problem:\n" + "\n".join(
+                    f"{i}. {shorten_sentence(s, 12)}" for i, (_, s) in enumerate(worked_entries[:3], start=1)
+                ) if worked_entries else f"Worked Problem (Page {end_p}):\nStep 1: Identify knowns\nStep 2: Apply the rule\nStep 3: Verify",
                 "formula": formulas[0][0] if formulas else None,
                 "diagram_description": None,
                 "animation_hint": "STEP_HIGHLIGHT",
                 "visual_data": {}
             })
 
-            # 6. COMPLEXITY / GOVERNING RULES
-            rules_narration = (
-                f"Let us now analyze the fundamental constraints and governing bounds of this topic. "
-                f"Whether evaluating computational complexity, conservation laws, or physical limits, "
-                f"the textbook emphasizes that systems operate within strict analytical boundaries. "
-                f"When scaling inputs or changing operating parameters, we must account for proportional scaling and resource trade-offs. "
-                f"Understanding these boundaries prevents incorrect assumptions when designing larger systems or conducting rigorous analysis."
+            # ---------- 6. GOVERNING RULES / FORMULAS ----------
+            rules_budget = target_words * budgets[6]
+            rules_entries = pick("definitions", rules_budget, fallbacks=["procedures", "general"])
+            formula_spoken = formulas[0][1] if formulas else None
+            rules_narration, rules_pages, rules_grounded = weave(
+                [
+                    f"Before we move on, let's pin down the governing relationships.",
+                    f"The textbook states the rule clearly, and here is how you say it out loud: {formula_spoken}." if formula_spoken else
+                    f"The textbook sets out the governing rule for {primary_term} in plain terms.",
+                ],
+                rules_entries,
             )
             sections.append({
                 "section_id": 6,
                 "type": "COMPLEXITY",
-                "title": "Governing Rules & Analytical Bounds",
+                "title": "Governing Rules & Key Relationships",
                 "narration": rules_narration,
-                "source_pages": [end_p],
+                "source_pages": rules_pages or [end_p],
                 "visual_type": "FORMULA_CARD" if formulas else "SUMMARY_CHIPS",
-                "visual_description": "Analytical bounds and governing relationships slide.",
-                "on_screen_text": f"Governing Rules:\n• Analytical bounds checked\n• Scaling behavior verified\n• Source Page {end_p}",
+                "visual_description": "Governing relationships and rules taken directly from the textbook's discussion.",
+                "on_screen_text": (f"Key Relationship:\n{formulas[0][0]}" if formulas else f"Governing Rules of {video.title}:") +
+                                  f"\n• Textbook page {rules_pages[-1] if rules_pages else end_p}",
                 "formula": formulas[0][0] if formulas else None,
                 "diagram_description": None,
                 "animation_hint": "EQUATION_EXPAND",
                 "visual_data": {}
             })
 
-            # 7. COMMON MISTAKES
-            mistakes_narration = (
-                f"Students frequently encounter subtle errors when studying {video.title}. "
-                f"First, students often apply formulas or rules without verifying that boundary conditions are met. "
-                f"Second, overlooking edge cases or unexpected zero values can cause derivations to break down. "
-                f"Third, failing to maintain consistent units or data types throughout a calculation leads to common exam errors. "
-                f"By systematically checking these points before finalizing your work, you can eliminate these avoidable mistakes."
+            # ---------- 7. COMMON MISTAKES (anchored to real terms) ----------
+            mistakes_budget = target_words * budgets[7]
+            mistakes_entries = pick("procedures", mistakes_budget * 0.6, fallbacks=["definitions"])
+            mistake_line_a = (
+                f"Students most often slip up by mixing {primary_term} and {secondary_term} — they sound similar, but the textbook treats them differently, so keep the definitions separate in your head."
+                if secondary_term != primary_term else
+                f"A very common slip with {primary_term} is memorizing the words without checking what they actually mean, so always test yourself against the definition."
+            )
+            mistake_line_b = (
+                "Another classic error: plugging numbers into a formula before checking the units and conditions. Slow down, verify the setup, and then compute."
+            )
+            mistakes_narration, mistakes_pages, mistakes_grounded = weave(
+                [f"Let me save you some marks — here are the mistakes I see most often with {video.title}.", mistake_line_a, mistake_line_b],
+                mistakes_entries,
             )
             sections.append({
                 "section_id": 7,
                 "type": "COMMON_MISTAKES",
                 "title": "Common Pitfalls & Frequent Student Errors",
                 "narration": mistakes_narration,
-                "source_pages": [end_p],
+                "source_pages": mistakes_pages or [end_p],
                 "visual_type": "COMMON_MISTAKES",
-                "visual_description": "Warning card detailing frequent student pitfalls and edge case errors.",
-                "on_screen_text": f"Common Pitfalls:\n1. Unverified boundary conditions\n2. Overlooked edge cases\n3. Inconsistent units or types",
+                "visual_description": "Warning card detailing frequent student pitfalls for this specific topic.",
+                "on_screen_text": f"Common Pitfalls:\n1. Confusing {primary_term} with {secondary_term}\n2. Skipping unit & condition checks\n3. Memorizing without verifying definitions",
                 "formula": None,
                 "diagram_description": None,
                 "animation_hint": "WARNING_PULSE",
                 "visual_data": {
                     "mistakes": [
-                        ("Unverified Boundary Conditions", "Applying formulas without confirming that conditions apply to the scenario."),
-                        ("Overlooked Edge Cases", "Failing to evaluate behavior at boundary values such as zero or maximum limits."),
-                        ("Inconsistent Units or Types", "Mixing mismatched units or incompatible representations during derivations.")
+                        (f"Confusing {primary_term} with {secondary_term}", "They sound similar but the textbook treats them differently — keep the definitions separate."),
+                        ("Skipping Unit & Condition Checks", "Always verify units and conditions before plugging numbers into a formula."),
+                        ("Memorizing Without Understanding", "Test yourself against the textbook definition, not just the words.")
                     ]
                 }
             })
 
-            # 8. PRACTICAL APPLICATIONS
-            apps_narration = (
-                f"Let us place these theoretical findings into practical and industrial context. "
-                f"In modern industry and engineering, the principles of {video.title} directly influence how "
-                f"high-performance, reliable systems are designed and maintained. "
-                f"Engineers rely on the exact bounds discussed on page {end_p} to guarantee fault tolerance and deterministic behavior. "
-                f"Adhering to these documented standards separates robust production systems from fragile experimental prototypes."
+            # ---------- 8. APPLICATIONS (application sentences) ----------
+            apps_budget = target_words * budgets[8]
+            apps_entries = pick("applications", apps_budget, fallbacks=["general"])
+            apps_narration, apps_pages, apps_grounded = weave(
+                [f"So where does all this show up outside the classroom? More places than you'd expect."],
+                apps_entries,
             )
+            if not apps_entries:
+                apps_narration += (
+                    f" The principles of {primary_term} appear whenever this part of {topic_name} matters in practice — and the textbook's worked discussion on pages {start_p} to {end_p} is exactly the template professionals follow."
+                )
             sections.append({
                 "section_id": 8,
                 "type": "APPLICATION",
-                "title": "Practical & Application Context",
+                "title": "Practical & Real-World Context",
                 "narration": apps_narration,
-                "source_pages": [end_p],
+                "source_pages": apps_pages or [end_p],
                 "visual_type": "APPLICATION_CARD",
-                "visual_description": "System architecture diagram demonstrating enterprise and real-world deployment.",
-                "on_screen_text": f"Application Context:\n• Fault Tolerance\n• Scalability\n• Verified on Page {end_p}",
+                "visual_description": "Real-world application contexts drawn from the textbook's discussion.",
+                "on_screen_text": "Real-World Use:\n" + "\n".join(
+                    f"• {shorten_sentence(s, 12)}" for _, s in apps_entries[:3]
+                ) if apps_entries else f"Real-World Use:\n• {primary_term.capitalize()} in practice\n• Textbook pages {start_p}-{end_p}",
                 "formula": None,
                 "diagram_description": None,
                 "animation_hint": "CARD_GLOW",
                 "visual_data": {
                     "applications": [
-                        ("High-Performance Systems", "Directly applied in production environments to maintain efficiency and reliability."),
-                        ("Deterministic Latency", "Ensures predictable operational latency under fluctuating real-world workloads."),
-                        ("Robust Engineering", "Provides foundational guarantees separating production designs from fragile prototypes.")
+                        (shorten_sentence(s, 8), shorten_sentence(s, 18)) for _, s in apps_entries[:3]
+                    ] or [
+                        ("Where It Matters", f"{primary_term.capitalize()} underpins practical problems in {topic_name}."),
+                        ("From the Textbook", f"Pages {start_p}-{end_p} connect the theory to real scenarios."),
+                        ("Exam Relevance", "These applications frequently anchor exam questions.")
                     ]
                 }
             })
 
-            # 9. SUMMARY & KNOWLEDGE CHECK
-            summary_quiz_narration = (
-                f"Let's review the key takeaways from today's lesson on {video.title}. "
-                f"First, remember the foundational definition grounded on textbook page {start_p}. "
-                f"Second, recall the governing step-by-step mechanics and boundary limits we analyzed. "
-                f"Third, apply the structured problem-solving procedure when working through practical exercises. "
-                f"Now, for our quick conceptual check: What is the primary invariant or rule that governs {video.title}? "
-                f"Keeping this core principle at the center of your analysis will ensure complete clarity across all your coursework. "
-                f"Thank you for learning, and we'll see you in the next module."
+            # ---------- 9. SUMMARY & KNOWLEDGE CHECK (grounded Q&A) ----------
+            summary_budget = target_words * budgets[9]
+            summary_entries = pick("definitions", summary_budget * 0.6, fallbacks=["general"])
+            summary_recap_terms = ", ".join(key_terms[:4]) if key_terms else video.title
+            summary_narration, summary_pages, summary_grounded = weave(
+                [
+                    f"Let's pull it all together.",
+                    f"Today we anchored everything in the textbook's own words across pages {start_p} to {end_p}, focusing on {summary_recap_terms}.",
+                ],
+                summary_entries,
+            )
+            if concept_grounded:
+                check_sentence = concept_grounded[0]
+                check_page = concept_pages[0] if concept_pages else start_p
+            elif summary_grounded:
+                check_sentence = summary_grounded[0]
+                check_page = summary_pages[0] if summary_pages else start_p
+            else:
+                check_sentence = f"{primary_term.capitalize()} is the central concept of {video.title}."
+                check_page = start_p
+            check_correct = shorten_sentence(check_sentence, 16)
+            check_distractors = [
+                f"{primary_term.capitalize()} is unrelated to {secondary_term} and plays no role in {topic_name}.",
+                f"The textbook treats {primary_term} as a purely decorative idea with no practical use.",
+                f"{primary_term.capitalize()} only applies when nothing measurable is involved.",
+            ]
+            summary_narration += (
+                f" Now, a quick check before you go: {shorten_sentence(check_sentence, 20)} — which statement matches the textbook best? "
+                f"Pick the option that stays true to the definition on page {check_page}, and you've got it. "
+                f"Great work today — review these pages once more and you'll be in excellent shape for the quiz."
             )
             sections.append({
                 "section_id": 9,
                 "type": "SUMMARY_AND_QUIZ",
                 "title": "Summary & Conceptual Knowledge Check",
-                "narration": summary_quiz_narration,
-                "source_pages": [end_p],
+                "narration": summary_narration,
+                "source_pages": summary_pages or [end_p],
                 "visual_type": "KNOWLEDGE_CHECK",
-                "visual_description": "Summary slide with key concept cards and review checklist.",
-                "on_screen_text": f"Key Takeaways:\n• Core Concept Mastered\n• Invariants & Bounds Verified\n• Grounded in Textbook",
+                "visual_description": "Summary slide with grounded key terms followed by a textbook-anchored knowledge check.",
+                "on_screen_text": f"Key Takeaways:\n" + "\n".join(f"• {t.title()}" for t in key_terms[:4]) +
+                                  f"\n\nQuick Check (Page {check_page})",
                 "formula": None,
                 "diagram_description": None,
                 "animation_hint": "CHECK_REVEAL",
                 "visual_data": {
-                    "question": f"What primary invariant or rule defines {video.title}?",
+                    "question": f"Which statement best matches the textbook's treatment of {primary_term}?",
                     "options": [
-                        ("Preserve core governing constraints across all states", True),
-                        ("Ignore boundary conditions during transformation", False),
-                        ("Assume infinite resources without bound", False)
+                        (check_correct, True),
+                        (check_distractors[0], False),
+                        (check_distractors[1], False),
+                        (check_distractors[2], False)
                     ],
-                    "explanation": "Fundamental principles require preserving system invariants under all operating conditions."
+                    "explanation": f"The textbook states on page {check_page}: {check_sentence}"
                 }
             })
+
+            # ---------- Word-count top-up: extend grounded sections if short ----------
+            current_words = sum(len(s["narration"].split()) for s in sections)
+            if current_words < target_words * 0.8 and page_sentences:
+                extra = dedupe_entries(buckets["general"], used_keys)
+                extra_parts: List[str] = []
+                for page_num, s in extra:
+                    if current_words >= target_words * 0.95:
+                        break
+                    cleaned = clean_sentence_for_narration(s)
+                    extra_parts.append(cleaned)
+                    current_words += len(cleaned.split())
+                    mark_entries_used([(page_num, s)], used_keys)
+                if extra_parts:
+                    # Fold remaining grounded content into the worked example section
+                    sections[4]["narration"] += " " + " ".join(extra_parts)
         # Assemble full narration text
         full_narration = "\n\n".join(
             f"[{s['type']} - {s['title']}]\n{s['narration']}" for s in sections

@@ -304,6 +304,10 @@ export interface VideoPlan {
   subtopic_id?: number;
   subtopic_title?: string;
   sequence_number: number;
+  /** PHASE 3B: optional player metadata when this plan refers to a playable video */
+  captions_url?: string | null;
+  resume_position_seconds?: number | null;
+  watch_percentage?: number | null;
   duration_seconds: number;
   estimated_duration_seconds?: number;
   source_start_page?: number;
@@ -419,6 +423,12 @@ export interface VideoUnit {
   learning_objective?: string | null;
   content_outline?: string[] | null;
   actual_duration_seconds?: number | null;
+  /** Browser-compatible caption track (WebVTT) served by the API */
+  captions_url?: string | null;
+  /** Requesting student's last playback position (for resume) */
+  resume_position_seconds?: number | null;
+  /** Requesting student's recorded watch coverage percentage */
+  watch_percentage?: number | null;
 }
 
 export interface Question {

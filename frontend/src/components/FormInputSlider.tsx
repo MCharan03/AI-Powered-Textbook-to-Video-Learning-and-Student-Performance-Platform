@@ -35,7 +35,7 @@ export const FormInputSlider: React.FC<FormInputSliderProps> = ({
             fontWeight: 700,
             padding: '2px 8px',
             borderRadius: '6px',
-            backgroundColor: isDark ? '#334155' : '#F1F5F9',
+            backgroundColor: isDark ? 'var(--admin-surface-raised)' : '#F1F5F9',
             color: isDark ? 'var(--admin-primary)' : 'var(--learn-primary)',
           }}
         >

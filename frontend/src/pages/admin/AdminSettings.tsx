@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { MessageBanner } from '../../components/admin/MessageBanner';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { FormInputSlider } from '../../components/FormInputSlider';
+import { Save } from 'lucide-react';
 import { api } from '../../lib/api';
 import { ThresholdSettings } from '../../lib/types';
 
@@ -13,6 +16,7 @@ export const AdminSettings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -29,50 +33,42 @@ export const AdminSettings: React.FC = () => {
   const handleSave = async () => {
     try {
       setSaving(true);
+      setErrorMsg(null);
       const updated = await api.updateThresholdSettings(settings);
       setSettings(updated);
       setDirty(false);
       setToast('Mastery thresholds updated successfully.');
       setTimeout(() => setToast(null), 3000);
     } catch (err: any) {
-      alert(`Save failed: ${err.message}`);
+      setErrorMsg(err.message || 'Save failed.');
     } finally {
       setSaving(false);
     }
   };
 
+  const bannerMessage = toast
+    ? { text: toast, type: 'success' as const }
+    : errorMsg
+    ? { text: errorMsg, type: 'error' as const }
+    : null;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <div>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#F8FAFC' }}>
-          Mastery Thresholds & Adaptive Settings
-        </h1>
-        <p style={{ fontSize: '14px', color: '#94A3B8', marginTop: '4px' }}>
-          Configure institutional passing bars, adaptive question synthesis volume, and modular video targets.
-        </p>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <PageHeader
+        title="Mastery Thresholds & Adaptive Settings"
+        description="Configure institutional passing bars, adaptive question synthesis volume, and modular video targets."
+      />
 
-      {toast && (
-        <div
-          style={{
-            padding: '12px 18px',
-            borderRadius: '8px',
-            backgroundColor: 'rgba(16, 185, 129, 0.2)',
-            border: '1px solid #10B981',
-            color: '#10B981',
-            fontSize: '13px',
-            fontWeight: 600,
-          }}
-        >
-          ✓ {toast}
-        </div>
-      )}
+      <MessageBanner
+        message={bannerMessage}
+        onDismiss={() => {
+          setToast(null);
+          setErrorMsg(null);
+        }}
+      />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
-        <SurfacePanel>
-          <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#F8FAFC', marginBottom: '20px' }}>
-            Concept Mastery Benchmark
-          </h2>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
+        <SurfacePanel title="Concept Mastery Benchmark">
           <FormInputSlider
             label="Mastery Passing Threshold"
             value={settings.mastery_threshold_percentage}
@@ -88,10 +84,7 @@ export const AdminSettings: React.FC = () => {
           />
         </SurfacePanel>
 
-        <SurfacePanel>
-          <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#F8FAFC', marginBottom: '20px' }}>
-            Adaptive Remediation Settings
-          </h2>
+        <SurfacePanel title="Adaptive Remediation Settings">
           <FormInputSlider
             label="Stage 6 Adaptive Question Count"
             value={settings.adaptive_question_count}
@@ -107,10 +100,7 @@ export const AdminSettings: React.FC = () => {
           />
         </SurfacePanel>
 
-        <SurfacePanel style={{ gridColumn: '1 / -1' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#F8FAFC', marginBottom: '20px' }}>
-            Modular Video Duration Target
-          </h2>
+        <SurfacePanel style={{ gridColumn: '1 / -1' }} title="Modular Video Duration Target">
           <FormInputSlider
             label="Target Video Unit Duration"
             value={settings.target_video_duration_minutes}
@@ -125,22 +115,27 @@ export const AdminSettings: React.FC = () => {
             }}
           />
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: '12px',
+              marginTop: '24px',
+              paddingTop: '16px',
+              borderTop: '1px solid var(--admin-border)',
+            }}
+          >
+            <span className="adm-help-text" style={{ marginTop: 0 }}>
+              {dirty ? 'You have unsaved changes.' : 'All changes saved.'}
+            </span>
             <button
+              type="button"
+              className="adm-btn adm-btn-primary"
               onClick={handleSave}
               disabled={!dirty || saving}
-              style={{
-                padding: '10px 24px',
-                borderRadius: '8px',
-                backgroundColor: dirty ? 'var(--admin-primary)' : '#334155',
-                color: dirty ? '#FFF' : '#94A3B8',
-                border: 'none',
-                fontWeight: 600,
-                fontSize: '13px',
-                cursor: dirty && !saving ? 'pointer' : 'not-allowed',
-                boxShadow: dirty ? '0 2px 4px rgba(99, 102, 241, 0.3)' : 'none',
-              }}
             >
+              <Save size={15} />
               {saving ? 'Saving Changes...' : 'Save Threshold Settings'}
             </button>
           </div>

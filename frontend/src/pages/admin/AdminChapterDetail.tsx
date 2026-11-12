@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, ArrowRight, BookOpen, ListTree } from 'lucide-react';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { CurriculumTree } from '../../components/CurriculumTree';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { MessageBanner } from '../../components/admin/MessageBanner';
+import { Modal } from '../../components/admin/Modal';
+import { ConfirmDialog } from '../../components/admin/ConfirmDialog';
+import { FormField } from '../../components/admin/FormField';
+import { LoadingState } from '../../components/admin/LoadingState';
+import { EmptyState } from '../../components/admin/EmptyState';
 import { api } from '../../lib/api';
 import { ChapterDetail, TopicItem, SubjectDetail, SubjectItem, ChapterItem } from '../../lib/types';
 
@@ -37,6 +45,9 @@ export const AdminChapterDetail: React.FC<AdminChapterDetailProps> = ({ chapterI
   const [chNumber, setChNumber] = useState(1);
   const [chTitle, setChTitle] = useState('');
   const [chDescription, setChDescription] = useState('');
+
+  // Delete topic confirmation
+  const [deleteTopicTarget, setDeleteTopicTarget] = useState<TopicItem | null>(null);
 
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -139,11 +150,18 @@ export const AdminChapterDetail: React.FC<AdminChapterDetailProps> = ({ chapterI
     }
   };
 
-  const handleDeleteTopic = async (topicId: number, title: string) => {
-    if (!window.confirm(`Are you sure you want to delete topic '${title}'?`)) return;
+  const requestDeleteTopic = (topic: TopicItem) => {
+    setDeleteTopicTarget(topic);
+  };
+
+  const handleDeleteTopic = async () => {
+    if (!deleteTopicTarget) return;
+    const topicId = deleteTopicTarget.id;
+    const title = deleteTopicTarget.title;
     try {
       await api.deleteTopic(topicId);
       setMessage({ text: `Topic '${title}' deleted.`, type: 'success' });
+      setDeleteTopicTarget(null);
       fetchChapter();
     } catch (err: any) {
       setMessage({ text: err.message, type: 'error' });
@@ -173,83 +191,69 @@ export const AdminChapterDetail: React.FC<AdminChapterDetailProps> = ({ chapterI
     }
   };
 
+  const breadcrumbStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    flexWrap: 'wrap',
+    fontSize: '13px',
+    color: 'var(--admin-text-secondary)',
+    marginBottom: '8px',
+  };
+
+  const crumbButton = (label: string, onClick: () => void) => (
+    <button type="button" className="adm-btn adm-btn-ghost adm-btn-sm" onClick={onClick}>
+      <ChevronLeft size={13} />
+      {label}
+    </button>
+  );
+
   if (loading && !chapter && activeChapterId) {
-    return <div style={{ padding: '24px', color: 'var(--admin-text)' }}>Loading chapter details...</div>;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <PageHeader title="Chapter Details" description="Loading chapter curriculum…" />
+        <SurfacePanel>
+          <LoadingState label="Loading chapter details…" rows={5} />
+        </SurfacePanel>
+      </div>
+    );
   }
 
   if (!activeChapterId || !chapter) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        {message && (
-          <div
-            style={{
-              padding: '12px 16px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-              color: message.type === 'success' ? '#34D399' : '#F87171',
-              border: `1px solid ${message.type === 'success' ? '#059669' : '#DC2626'}`,
-            }}
-          >
-            {message.text}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)' }}>
-              Chapter Curriculum Management
-            </h1>
-            <p style={{ color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
-              Select an academic subject to view, create, and organize chapters and syllabus topics.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <PageHeader
+          title="Chapter Curriculum Management"
+          description="Select an academic subject to view, create, and organize chapters and syllabus topics."
+          actions={
             <button
+              className="adm-btn adm-btn-primary"
               onClick={() => setAddChapterModalOpen(true)}
               disabled={!selectedSubjectId}
-              style={{
-                padding: '10px 20px',
-                borderRadius: '8px',
-                border: 'none',
-                backgroundColor: 'var(--admin-primary)',
-                color: '#FFFFFF',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: selectedSubjectId ? 'pointer' : 'not-allowed',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
             >
-              <span>+</span>
-              <span>Add Chapter</span>
+              <Plus size={15} />
+              Add Chapter
             </button>
-          </div>
-        </div>
+          }
+        />
+
+        <MessageBanner message={message} onDismiss={() => setMessage(null)} />
 
         {/* Subject Filter Bar */}
         <SurfacePanel>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--admin-text)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <label className="adm-label" htmlFor="chapter-subject-select" style={{ marginBottom: 0 }}>
               Academic Subject:
-            </span>
+            </label>
             <select
+              id="chapter-subject-select"
+              className="adm-select"
               value={selectedSubjectId || ''}
               onChange={(e) => setSelectedSubjectId(Number(e.target.value))}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                color: 'var(--admin-text)',
-                fontSize: '13px',
-                minWidth: '240px',
-              }}
+              style={{ maxWidth: '280px' }}
             >
               {subjectsList.map((s) => (
-                <option key={s.id} value={s.id} style={{ backgroundColor: '#1E293B', color: '#FFFFFF' }}>
+                <option key={s.id} value={s.id}>
                   {s.name} ({s.class})
                 </option>
               ))}
@@ -270,14 +274,8 @@ export const AdminChapterDetail: React.FC<AdminChapterDetailProps> = ({ chapterI
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        backgroundColor: 'rgba(99, 102, 241, 0.15)',
-                        color: 'var(--admin-primary)',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                      }}
+                      className="adm-badge"
+                      style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }}
                     >
                       Chapter {ch.chapter_number}
                     </span>
@@ -285,168 +283,81 @@ export const AdminChapterDetail: React.FC<AdminChapterDetailProps> = ({ chapterI
                   <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '6px' }}>
                     {ch.title}
                   </h3>
-                  <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', lineHeight: '1.4' }}>
+                  <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', lineHeight: 1.4 }}>
                     {ch.description || 'No module description configured.'}
                   </p>
                 </div>
 
                 <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                   <button
+                    className="adm-btn adm-btn-primary adm-btn-sm"
                     onClick={() => setActiveChapterId(ch.id)}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      backgroundColor: 'var(--admin-primary)',
-                      color: '#FFFFFF',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
                   >
-                    View Topics & Details →
+                    View Topics & Details
+                    <ArrowRight size={13} />
                   </button>
                 </div>
               </div>
             </SurfacePanel>
           ))}
           {subjectChapters.length === 0 && (
-            <div style={{ gridColumn: '1 / -1', padding: '32px', textAlign: 'center', color: 'var(--admin-text-secondary)' }}>
-              No chapters created for this subject yet. Click "+ Add Chapter" to create the first chapter.
+            <div style={{ gridColumn: '1 / -1' }}>
+              <EmptyState
+                title="No chapters yet"
+                description="No chapters created for this subject yet. Use the Add Chapter button to create the first chapter."
+                icon={<BookOpen size={20} />}
+              />
             </div>
           )}
         </div>
 
         {/* Add Chapter Modal */}
-        {addChapterModalOpen && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.6)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000,
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: 'var(--admin-surface)',
-                border: '1px solid var(--admin-border)',
-                borderRadius: '12px',
-                padding: '24px',
-                width: '460px',
-                maxWidth: '90vw',
-              }}
-            >
-              <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '16px' }}>
-                Create New Chapter
-              </h3>
-              <form onSubmit={handleCreateChapterForSubject} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Chapter Number *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    value={newChNumber}
-                    onChange={(e) => setNewChNumber(Number(e.target.value))}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Chapter Title *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newChTitle}
-                    onChange={(e) => setNewChTitle(e.target.value)}
-                    placeholder="e.g. Kinematics & Motion"
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                    Description
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={newChDescription}
-                    onChange={(e) => setNewChDescription(e.target.value)}
-                    placeholder="Brief description of the chapter contents..."
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      color: 'var(--admin-text)',
-                      fontSize: '13px',
-                      resize: 'vertical',
-                    }}
-                  />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setAddChapterModalOpen(false)}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--admin-border)',
-                      backgroundColor: 'transparent',
-                      color: 'var(--admin-text-secondary)',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    style={{
-                      padding: '8px 20px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      backgroundColor: 'var(--admin-primary)',
-                      color: '#FFFFFF',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: submitting ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {submitting ? 'Creating...' : 'Create Chapter'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        <Modal
+          open={addChapterModalOpen}
+          onClose={() => setAddChapterModalOpen(false)}
+          title="Create New Chapter"
+          subtitle="Chapters group topics within a subject."
+          maxWidth={460}
+          footer={
+            <>
+              <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setAddChapterModalOpen(false)} disabled={submitting}>
+                Cancel
+              </button>
+              <button type="submit" form="create-chapter-form" className="adm-btn adm-btn-primary" disabled={submitting}>
+                {submitting ? 'Creating…' : 'Create Chapter'}
+              </button>
+            </>
+          }
+        >
+          <form id="create-chapter-form" onSubmit={handleCreateChapterForSubject} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <FormField
+              label="Chapter Number"
+              name="new-chapter-number"
+              type="number"
+              required
+              min={1}
+              value={newChNumber}
+              onChange={(v) => setNewChNumber(Number(v))}
+            />
+            <FormField
+              label="Chapter Title"
+              name="new-chapter-title"
+              type="text"
+              required
+              placeholder="e.g. Kinematics & Motion"
+              value={newChTitle}
+              onChange={setNewChTitle}
+            />
+            <FormField
+              label="Description"
+              name="new-chapter-description"
+              type="textarea"
+              placeholder="Brief description of the chapter contents..."
+              value={newChDescription}
+              onChange={setNewChDescription}
+            />
+          </form>
+        </Modal>
       </div>
     );
   }
@@ -454,109 +365,50 @@ export const AdminChapterDetail: React.FC<AdminChapterDetailProps> = ({ chapterI
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Breadcrumb & Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--admin-text-secondary)', marginBottom: '8px' }}>
-            <span
-              onClick={() => { setActiveChapterId(undefined); setChapter(null); }}
-              style={{ cursor: 'pointer', color: '#60A5FA' }}
-            >
-              All Chapters
-            </span>
-            <span>/</span>
-            <span
-              onClick={() => onNavigate && onNavigate('admin-subjects')}
-              style={{ cursor: 'pointer', color: '#60A5FA' }}
-            >
-              Subjects
-            </span>
-            <span>/</span>
-            {parentSubject && (
-              <>
-                <span
-                  onClick={() => onNavigate && onNavigate('admin-subjects', { subjectId: parentSubject.id })}
-                  style={{ cursor: 'pointer', color: '#60A5FA' }}
-                >
-                  {parentSubject.name}
-                </span>
-                <span>/</span>
-              </>
-            )}
-            <span style={{ color: 'var(--admin-text)' }}>Chapter {chapter.chapter_number}</span>
-          </div>
-
-          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)' }}>
-            Chapter {chapter.chapter_number}: {chapter.title}
-          </h1>
-          <p style={{ color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
-            {chapter.description || 'No module description configured.'}
-          </p>
+      <div>
+        <div style={breadcrumbStyle}>
+          {crumbButton('All Chapters', () => { setActiveChapterId(undefined); setChapter(null); })}
+          <ChevronRight size={13} style={{ color: 'var(--admin-text-secondary)', flexShrink: 0 }} />
+          {crumbButton('Subjects', () => onNavigate && onNavigate('admin-subjects'))}
+          {parentSubject && (
+            <>
+              <ChevronRight size={13} style={{ color: 'var(--admin-text-secondary)', flexShrink: 0 }} />
+              {crumbButton(parentSubject.name, () => onNavigate && onNavigate('admin-subjects', { subjectId: parentSubject.id }))}
+            </>
+          )}
+          <ChevronRight size={13} style={{ color: 'var(--admin-text-secondary)', flexShrink: 0 }} />
+          <span style={{ color: 'var(--admin-text)', fontWeight: 600 }}>Chapter {chapter.chapter_number}</span>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            onClick={() => setEditChapterModalOpen(true)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: '1px solid var(--admin-border)',
-              backgroundColor: 'transparent',
-              color: 'var(--admin-text)',
-              fontSize: '13px',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            Edit Chapter
-          </button>
-          <button
-            onClick={() => setAddTopicModalOpen(true)}
-            style={{
-              padding: '8px 18px',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: 'var(--admin-primary)',
-              color: '#FFFFFF',
-              fontWeight: 600,
-              fontSize: '13px',
-              cursor: 'pointer',
-            }}
-          >
-            + Add Topic
-          </button>
-        </div>
+        <PageHeader
+          title={`Chapter ${chapter.chapter_number}: ${chapter.title}`}
+          description={chapter.description || 'No module description configured.'}
+          actions={
+            <>
+              <button className="adm-btn adm-btn-secondary" onClick={() => setEditChapterModalOpen(true)}>
+                <Pencil size={14} />
+                Edit Chapter
+              </button>
+              <button className="adm-btn adm-btn-primary" onClick={() => setAddTopicModalOpen(true)}>
+                <Plus size={15} />
+                Add Topic
+              </button>
+            </>
+          }
+        />
       </div>
 
-      {message && (
-        <div
-          style={{
-            padding: '12px 16px',
-            borderRadius: '8px',
-            backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            border: `1px solid ${message.type === 'success' ? '#10B981' : '#EF4444'}`,
-            color: message.type === 'success' ? '#34D399' : '#F87171',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <span>{message.text}</span>
-          <button
-            onClick={() => setMessage(null)}
-            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
+      <MessageBanner message={message} onDismiss={() => setMessage(null)} />
 
       {/* Grid: Topics List + Visual Tree */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr)', gap: '24px' }}>
         <SurfacePanel title={`Topics in Chapter ${chapter.chapter_number} (${chapter.topics.length} total)`}>
           {chapter.topics.length === 0 ? (
-            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--admin-text-secondary)', fontSize: '13px' }}>
-              No topics created in this chapter yet. Click "+ Add Topic" above to begin.
-            </div>
+            <EmptyState
+              title="No topics yet"
+              description="No topics created in this chapter yet. Use the Add Topic button above to begin."
+              icon={<ListTree size={20} />}
+            />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {chapter.topics.map((t: TopicItem) => (
@@ -564,17 +416,19 @@ export const AdminChapterDetail: React.FC<AdminChapterDetailProps> = ({ chapterI
                   key={t.id}
                   style={{
                     padding: '12px 16px',
-                    borderRadius: '8px',
+                    borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    backgroundColor: 'var(--admin-bg)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
+                    gap: '10px',
+                    flexWrap: 'wrap',
                   }}
                 >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#60A5FA' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--admin-primary)' }}>
                         Topic {t.sequence_number}:
                       </span>
                       <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)' }}>
@@ -586,43 +440,31 @@ export const AdminChapterDetail: React.FC<AdminChapterDetailProps> = ({ chapterI
                         {t.description}
                       </p>
                     )}
-                    <div style={{ display: 'flex', gap: '14px', fontSize: '11px', color: 'var(--admin-text-secondary)', marginTop: '6px' }}>
-                      <span>Subtopics: <strong style={{ color: 'var(--admin-text)' }}>{t.subtopics_count}</strong></span>
-                      <span>Videos: <strong style={{ color: 'var(--admin-text)' }}>{t.videos_count}</strong></span>
-                      <span>Quizzes: <strong style={{ color: 'var(--admin-text)' }}>{t.quizzes_count}</strong></span>
+                    <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '11px', color: 'var(--admin-text-secondary)', marginTop: '6px' }}>
+                      <span>Subtopics: <strong style={{ color: 'var(--admin-text)' }}>{t.subtopics_count ?? '—'}</strong></span>
+                      <span>Videos: <strong style={{ color: 'var(--admin-text)' }}>{t.videos_count ?? '—'}</strong></span>
+                      <span>Quizzes: <strong style={{ color: 'var(--admin-text)' }}>{t.quizzes_count ?? '—'}</strong></span>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                     {onNavigate && (
                       <button
+                        className="adm-btn adm-btn-secondary adm-btn-sm"
                         onClick={() => onNavigate('admin-topics', { topicId: t.id })}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '6px',
-                          border: '1px solid var(--admin-border)',
-                          backgroundColor: 'transparent',
-                          color: '#60A5FA',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                        }}
                       >
-                        Manage Subtopics →
+                        Manage Subtopics
+                        <ArrowRight size={13} />
                       </button>
                     )}
                     <button
-                      onClick={() => handleDeleteTopic(t.id, t.title)}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        backgroundColor: 'transparent',
-                        color: '#EF4444',
-                        fontSize: '12px',
-                        cursor: 'pointer',
-                      }}
+                      type="button"
+                      className="adm-btn adm-btn-ghost adm-btn-sm"
+                      aria-label={`Delete topic ${t.title}`}
+                      onClick={() => requestDeleteTopic(t)}
+                      style={{ color: 'var(--admin-error)' }}
                     >
-                      Delete
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
@@ -643,266 +485,109 @@ export const AdminChapterDetail: React.FC<AdminChapterDetailProps> = ({ chapterI
       </div>
 
       {/* Add Topic Modal */}
-      {addTopicModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--admin-surface)',
-              border: '1px solid var(--admin-border)',
-              borderRadius: '12px',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '500px',
-            }}
-          >
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)', marginBottom: '16px' }}>
-              Add Topic to Chapter {chapter.chapter_number}
-            </h2>
-            <form onSubmit={handleAddTopic} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Sequence Number *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  value={sequenceNumber}
-                  onChange={(e) => setSequenceNumber(Number(e.target.value))}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Topic Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Distance and Displacement"
-                  value={topicTitle}
-                  onChange={(e) => setTopicTitle(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Description
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Summary of specific learning objectives and video topics..."
-                  value={topicDescription}
-                  onChange={(e) => setTopicDescription(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                    resize: 'vertical',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={() => setAddTopicModalOpen(false)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'transparent',
-                    color: 'var(--admin-text-secondary)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    padding: '8px 20px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFFFFF',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {submitting ? 'Adding...' : 'Add Topic'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={addTopicModalOpen}
+        onClose={() => setAddTopicModalOpen(false)}
+        title={`Add Topic to Chapter ${chapter.chapter_number}`}
+        subtitle="Topics group related subtopics and generated learning units."
+        maxWidth={500}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setAddTopicModalOpen(false)} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" form="add-topic-form" className="adm-btn adm-btn-primary" disabled={submitting}>
+              {submitting ? 'Adding…' : 'Add Topic'}
+            </button>
+          </>
+        }
+      >
+        <form id="add-topic-form" onSubmit={handleAddTopic} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <FormField
+            label="Sequence Number"
+            name="topic-sequence"
+            type="number"
+            required
+            min={1}
+            value={sequenceNumber}
+            onChange={(v) => setSequenceNumber(Number(v))}
+          />
+          <FormField
+            label="Topic Title"
+            name="topic-title"
+            type="text"
+            required
+            placeholder="e.g. Distance and Displacement"
+            value={topicTitle}
+            onChange={setTopicTitle}
+          />
+          <FormField
+            label="Description"
+            name="topic-description"
+            type="textarea"
+            placeholder="Summary of specific learning objectives and video topics..."
+            value={topicDescription}
+            onChange={setTopicDescription}
+          />
+        </form>
+      </Modal>
 
       {/* Edit Chapter Modal */}
-      {editChapterModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--admin-surface)',
-              border: '1px solid var(--admin-border)',
-              borderRadius: '12px',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '500px',
-            }}
-          >
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)', marginBottom: '16px' }}>
-              Edit Chapter #{chapter.chapter_number}
-            </h2>
-            <form onSubmit={handleUpdateChapter} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Chapter Number *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  value={chNumber}
-                  onChange={(e) => setChNumber(Number(e.target.value))}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
+      <Modal
+        open={editChapterModalOpen}
+        onClose={() => setEditChapterModalOpen(false)}
+        title={`Edit Chapter #${chapter.chapter_number}`}
+        subtitle="Update chapter numbering, title, and description."
+        maxWidth={500}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setEditChapterModalOpen(false)} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" form="edit-chapter-form" className="adm-btn adm-btn-primary" disabled={submitting}>
+              {submitting ? 'Saving…' : 'Save Changes'}
+            </button>
+          </>
+        }
+      >
+        <form id="edit-chapter-form" onSubmit={handleUpdateChapter} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <FormField
+            label="Chapter Number"
+            name="edit-chapter-number"
+            type="number"
+            required
+            min={1}
+            value={chNumber}
+            onChange={(v) => setChNumber(Number(v))}
+          />
+          <FormField
+            label="Chapter Title"
+            name="edit-chapter-title"
+            type="text"
+            required
+            value={chTitle}
+            onChange={setChTitle}
+          />
+          <FormField
+            label="Description"
+            name="edit-chapter-description"
+            type="textarea"
+            value={chDescription}
+            onChange={setChDescription}
+          />
+        </form>
+      </Modal>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Chapter Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={chTitle}
-                  onChange={(e) => setChTitle(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Description
-                </label>
-                <textarea
-                  rows={3}
-                  value={chDescription}
-                  onChange={(e) => setChDescription(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                    resize: 'vertical',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={() => setEditChapterModalOpen(false)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'transparent',
-                    color: 'var(--admin-text-secondary)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    padding: '8px 20px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFFFFF',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {submitting ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Delete Topic Confirmation */}
+      <ConfirmDialog
+        open={!!deleteTopicTarget}
+        title="Delete Topic"
+        message={`Are you sure you want to delete topic '${deleteTopicTarget?.title || ''}'? This action cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={handleDeleteTopic}
+        onCancel={() => setDeleteTopicTarget(null)}
+      />
     </div>
   );
 };

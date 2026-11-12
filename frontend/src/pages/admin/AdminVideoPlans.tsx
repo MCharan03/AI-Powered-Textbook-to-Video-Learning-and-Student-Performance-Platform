@@ -1,6 +1,28 @@
 import React, { useState, useEffect } from 'react';
+import {
+  Zap,
+  RefreshCw,
+  CheckCircle2,
+  Pencil,
+  Clock,
+  BookOpen,
+  Film,
+  Clapperboard,
+  ShieldCheck,
+  ChevronRight,
+  LibraryBig,
+} from 'lucide-react';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { StatusBadge } from '../../components/StatusBadge';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { StatCard } from '../../components/admin/StatCard';
+import { MessageBanner } from '../../components/admin/MessageBanner';
+import { LoadingState } from '../../components/admin/LoadingState';
+import { EmptyState } from '../../components/admin/EmptyState';
+import { ErrorState } from '../../components/admin/ErrorState';
+import { Modal } from '../../components/admin/Modal';
+import { ConfirmDialog } from '../../components/admin/ConfirmDialog';
+import { FormField } from '../../components/admin/FormField';
 import { api } from '../../lib/api';
 import {
   VideoPlan,
@@ -34,6 +56,9 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
   // Generation state
   const [generating, setGenerating] = useState(false);
   const [approvingId, setApprovingId] = useState<number | null>(null);
+
+  // Bulk approve confirmation state
+  const [confirmBulkTopicId, setConfirmBulkTopicId] = useState<number | null>(null);
 
   // Edit Modal State
   const [editingVideo, setEditingVideo] = useState<VideoPlan | null>(null);
@@ -111,6 +136,7 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
         status: selectedStatusFilter || undefined,
       });
       setVideoPlans(plans);
+      setActionError(null);
     } catch (err: any) {
       setActionError(err.message || 'Failed to load video plans');
     } finally {
@@ -194,7 +220,8 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
       setTimeout(() => setActionSuccess(null), 3000);
       await loadPlans();
     } catch (err: any) {
-      alert(`Approval failed: ${err.message}`);
+      setActionError(`Approval failed: ${err.message}`);
+      setTimeout(() => setActionError(null), 5000);
     } finally {
       setApprovingId(null);
     }
@@ -202,14 +229,15 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
 
   // Bulk Approve Topic Plans
   const handleBulkApproveTopic = async (topicId: number) => {
-    if (!window.confirm('Approve all video plans for this topic?')) return;
+    setConfirmBulkTopicId(null);
     try {
       await api.approveTopicVideoPlans(topicId);
       setActionSuccess('All video plans for topic approved!');
       setTimeout(() => setActionSuccess(null), 3000);
       await loadPlans();
     } catch (err: any) {
-      alert(`Bulk approval failed: ${err.message}`);
+      setActionError(`Bulk approval failed: ${err.message}`);
+      setTimeout(() => setActionError(null), 5000);
     }
   };
 
@@ -239,7 +267,8 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
       setTimeout(() => setActionSuccess(null), 3000);
       await loadPlans();
     } catch (err: any) {
-      alert(`Update failed: ${err.message}`);
+      setActionError(`Update failed: ${err.message}`);
+      setTimeout(() => setActionError(null), 5000);
     } finally {
       setSavingEdit(false);
     }
@@ -258,116 +287,82 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)' }}>
-            Intelligent Video Segmentation & Video Plans
-          </h1>
-          <p style={{ fontSize: '14px', color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
-            Dynamically partition approved curriculum into ~5–6 minute educational videos optimized for conceptual coherence.
-          </p>
-        </div>
+      <PageHeader
+        title="Intelligent Video Segmentation & Video Plans"
+        description="Dynamically partition approved curriculum into ~5–6 minute educational videos optimized for conceptual coherence."
+        actions={
+          selectedTopicId ? (
+            <>
+              <button
+                type="button"
+                className="adm-btn adm-btn-secondary"
+                onClick={() => handlePreviewRegeneration(Number(selectedTopicId))}
+                disabled={generating}
+              >
+                <RefreshCw size={14} />
+                Regenerate (Safe Diff)
+              </button>
 
-        {selectedTopicId && (
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button
-              onClick={() => handlePreviewRegeneration(Number(selectedTopicId))}
-              disabled={generating}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                backgroundColor: 'transparent',
-                border: '1px solid var(--admin-border)',
-                color: 'var(--admin-text)',
-                borderRadius: '8px',
-                padding: '9px 14px',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: generating ? 'not-allowed' : 'pointer',
-              }}
-            >
-              <span>🔄</span>
-              <span>Regenerate (Safe Diff)</span>
-            </button>
-
-            <button
-              onClick={() => handleGenerateTopicPlan(Number(selectedTopicId), false)}
-              disabled={generating}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                backgroundColor: 'var(--admin-primary)',
-                color: '#FFFFFF',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '9px 16px',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: generating ? 'not-allowed' : 'pointer',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-              }}
-            >
-              <span>⚡</span>
-              <span>{generating ? 'Segmenting...' : 'Segment Topic'}</span>
-            </button>
-          </div>
-        )}
-      </div>
+              <button
+                type="button"
+                className="adm-btn adm-btn-primary"
+                onClick={() => handleGenerateTopicPlan(Number(selectedTopicId), false)}
+                disabled={generating}
+              >
+                <Zap size={14} />
+                {generating ? 'Segmenting…' : 'Segment Topic'}
+              </button>
+            </>
+          ) : undefined
+        }
+      />
 
       {/* Notifications */}
-      {actionSuccess && (
-        <div style={{ padding: '12px 16px', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', color: '#34D399', fontSize: '14px', fontWeight: 600 }}>
-          ✅ {actionSuccess}
-        </div>
-      )}
-      {actionError && (
-        <div style={{ padding: '12px 16px', borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#F87171', fontSize: '14px', fontWeight: 600 }}>
-          ⚠️ {actionError}
-        </div>
-      )}
+      <MessageBanner
+        message={
+          actionError
+            ? { text: actionError, type: 'error' as const }
+            : actionSuccess
+            ? { text: actionSuccess, type: 'success' as const }
+            : null
+        }
+        onDismiss={() => {
+          setActionError(null);
+          setActionSuccess(null);
+        }}
+      />
 
       {/* Metrics Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-        <SurfacePanel>
-          <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', fontWeight: 600 }}>Total Video Plans</div>
-          <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--admin-text)', marginTop: '4px' }}>
-            {videoPlans.length}
-          </div>
-        </SurfacePanel>
-        <SurfacePanel>
-          <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', fontWeight: 600 }}>Under Review</div>
-          <div style={{ fontSize: '26px', fontWeight: 700, color: '#FBBF24', marginTop: '4px' }}>
-            {videoPlans.filter((v) => v.status === 'REVIEW' || v.status === 'pending_review').length}
-          </div>
-        </SurfacePanel>
-        <SurfacePanel>
-          <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', fontWeight: 600 }}>Approved Plans</div>
-          <div style={{ fontSize: '26px', fontWeight: 700, color: '#34D399', marginTop: '4px' }}>
-            {videoPlans.filter((v) => v.status === 'APPROVED' || v.status === 'PUBLISHED').length}
-          </div>
-        </SurfacePanel>
-        <SurfacePanel>
-          <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', fontWeight: 600 }}>Estimated Total Run Time</div>
-          <div style={{ fontSize: '26px', fontWeight: 700, color: '#38BDF8', marginTop: '4px' }}>
-            ~{totalMinutes} min
-          </div>
-        </SurfacePanel>
+        <StatCard label="Total Video Plans" value={videoPlans.length} icon={Film} tone="default" />
+        <StatCard
+          label="Under Review"
+          value={videoPlans.filter((v) => v.status === 'REVIEW' || v.status === 'pending_review').length}
+          icon={Clock}
+          tone="warning"
+        />
+        <StatCard
+          label="Approved Plans"
+          value={videoPlans.filter((v) => v.status === 'APPROVED' || v.status === 'PUBLISHED').length}
+          icon={ShieldCheck}
+          tone="success"
+        />
+        <StatCard label="Estimated Total Run Time" value={`~${totalMinutes} min`} icon={Clapperboard} tone="primary" />
       </div>
 
       {/* Hierarchical Filter Toolbar */}
       <SurfacePanel>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
           {/* Subject Filter */}
           <div style={{ minWidth: '180px', flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
+            <label className="adm-label" htmlFor="vp-subject-filter">
               Subject
             </label>
             <select
+              id="vp-subject-filter"
+              className="adm-select"
               value={selectedSubjectId}
               onChange={(e) => setSelectedSubjectId(e.target.value ? Number(e.target.value) : '')}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', fontSize: '13px' }}
             >
               <option value="">-- All Subjects --</option>
               {subjects.map((s) => (
@@ -380,14 +375,16 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
 
           {/* Chapter Filter */}
           <div style={{ minWidth: '180px', flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
+            <label className="adm-label" htmlFor="vp-chapter-filter">
               Chapter
             </label>
             <select
+              id="vp-chapter-filter"
+              className="adm-select"
               value={selectedChapterId}
               onChange={(e) => setSelectedChapterId(e.target.value ? Number(e.target.value) : '')}
               disabled={!selectedSubjectId}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', fontSize: '13px', opacity: selectedSubjectId ? 1 : 0.6 }}
+              style={{ opacity: selectedSubjectId ? 1 : 0.6 }}
             >
               <option value="">-- All Chapters in Subject --</option>
               {chapters.map((c) => (
@@ -400,19 +397,21 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
 
           {/* Topic Filter */}
           <div style={{ minWidth: '180px', flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
+            <label className="adm-label" htmlFor="vp-topic-filter">
               Topic
             </label>
             <select
+              id="vp-topic-filter"
+              className="adm-select"
               value={selectedTopicId}
               onChange={(e) => setSelectedTopicId(e.target.value ? Number(e.target.value) : '')}
               disabled={!selectedChapterId}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', fontSize: '13px', opacity: selectedChapterId ? 1 : 0.6 }}
+              style={{ opacity: selectedChapterId ? 1 : 0.6 }}
             >
               <option value="">-- All Topics in Chapter --</option>
               {topics.map((t) => (
                 <option key={t.id} value={t.id}>
-                  § {t.sequence_number || 1}: {t.title}
+                  Topic {t.sequence_number || 1}: {t.title}
                 </option>
               ))}
             </select>
@@ -420,13 +419,14 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
 
           {/* Status Filter */}
           <div style={{ minWidth: '140px' }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
+            <label className="adm-label" htmlFor="vp-status-filter">
               Status
             </label>
             <select
+              id="vp-status-filter"
+              className="adm-select"
               value={selectedStatusFilter}
               onChange={(e) => setSelectedStatusFilter(e.target.value)}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', fontSize: '13px' }}
             >
               <option value="">All Statuses</option>
               <option value="REVIEW">Review</option>
@@ -439,7 +439,7 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
 
       {/* Video Plans Listing */}
       <SurfacePanel>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--admin-text)' }}>
               Video Units & Semantic Outlines
@@ -451,55 +451,51 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
 
           {selectedTopicId && videoPlans.length > 0 && (
             <button
-              onClick={() => handleBulkApproveTopic(Number(selectedTopicId))}
+              type="button"
+              onClick={() => setConfirmBulkTopicId(Number(selectedTopicId))}
               style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
                 padding: '6px 14px',
-                borderRadius: '6px',
-                backgroundColor: '#10B981',
-                color: '#FFF',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--admin-success)',
+                color: '#FFFFFF',
                 border: 'none',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
             >
-              ✅ Approve All in Topic
+              <CheckCircle2 size={13} />
+              Approve All in Topic
             </button>
           )}
         </div>
 
         {loading ? (
-          <div style={{ padding: '36px', textAlign: 'center', color: 'var(--admin-text-secondary)' }}>
-            Loading video plans...
-          </div>
+          <LoadingState label="Loading video plans…" rows={4} variant="table" />
+        ) : actionError && videoPlans.length === 0 ? (
+          <ErrorState message={actionError} onRetry={loadPlans} />
         ) : videoPlans.length === 0 ? (
-          <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '36px', marginBottom: '12px' }}>🎬</div>
-            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--admin-text)' }}>
-              No Video Plans Generated
-            </h3>
-            <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', maxWidth: '440px', margin: '4px auto 16px auto' }}>
-              Select an approved curriculum topic above and click "Segment Topic" to dynamically partition its educational content into ~5.5-minute videos.
-            </p>
-            {selectedChapterId && (
-              <button
-                onClick={() => handleGenerateChapterPlans(Number(selectedChapterId))}
-                disabled={generating}
-                style={{
-                  backgroundColor: 'var(--admin-primary)',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '9px 16px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                {generating ? 'Segmenting Chapter...' : 'Segment Entire Chapter'}
-              </button>
-            )}
-          </div>
+          <EmptyState
+            icon={<Clapperboard size={20} />}
+            title="No Video Plans Generated"
+            description='Select an approved curriculum topic above and click "Segment Topic" to dynamically partition its educational content into ~5.5-minute videos.'
+            action={
+              selectedChapterId ? (
+                <button
+                  type="button"
+                  className="adm-btn adm-btn-primary"
+                  onClick={() => handleGenerateChapterPlans(Number(selectedChapterId))}
+                  disabled={generating}
+                >
+                  <Zap size={14} />
+                  {generating ? 'Segmenting Chapter…' : 'Segment Entire Chapter'}
+                </button>
+              ) : undefined
+            }
+          />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {videoPlans.map((v) => {
@@ -510,29 +506,23 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
                 <div
                   key={v.id}
                   style={{
-                    borderRadius: '10px',
+                    borderRadius: 'var(--radius-lg)',
                     border: '1px solid var(--admin-border)',
-                    backgroundColor: 'var(--admin-bg)',
+                    backgroundColor: 'var(--admin-surface-raised)',
                     padding: '18px 20px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '12px',
-                    transition: 'border 0.2s ease',
                   }}
                 >
                   {/* Top Bar: Sequence, Title, Badges */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', minWidth: 0 }}>
                       <span
-                        style={{
-                          backgroundColor: 'rgba(99, 102, 241, 0.2)',
-                          color: '#818CF8',
-                          padding: '4px 10px',
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                        }}
+                        className="adm-badge"
+                        style={{ backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }}
                       >
+                        <Film size={11} />
                         Video {v.sequence_number}
                       </span>
                       <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--admin-text)', margin: 0 }}>
@@ -543,71 +533,141 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <button
+                        type="button"
+                        className="adm-btn adm-btn-secondary adm-btn-sm"
                         onClick={() => openEditModal(v)}
-                        style={{
-                          padding: '5px 12px',
-                          borderRadius: '6px',
-                          backgroundColor: 'transparent',
-                          border: '1px solid var(--admin-border)',
-                          color: 'var(--admin-text)',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                        }}
                       >
-                        ✏️ Edit Plan
+                        <Pencil size={12} />
+                        Edit Plan
                       </button>
 
                       {!isApproved && (
                         <button
+                          type="button"
                           onClick={() => handleApproveVideo(v.id)}
                           disabled={approvingId === v.id}
                           style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
                             padding: '5px 14px',
-                            borderRadius: '6px',
-                            backgroundColor: '#10B981',
-                            color: '#FFF',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: 'var(--admin-success)',
+                            color: '#FFFFFF',
                             border: 'none',
                             fontSize: '12px',
                             fontWeight: 600,
                             cursor: approvingId === v.id ? 'not-allowed' : 'pointer',
                           }}
                         >
-                          {approvingId === v.id ? 'Approving...' : 'Approve'}
+                          <CheckCircle2 size={13} />
+                          {approvingId === v.id ? 'Approving…' : 'Approve'}
                         </button>
                       )}
                     </div>
                   </div>
 
                   {/* Context Bar: Topic / Pages / Duration */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
-                    <span>
-                      📚 {v.subject_name || 'Subject'} › {v.chapter_title || 'Chapter'} › <strong style={{ color: '#818CF8' }}>{v.topic_title || 'Topic'}</strong>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                      alignItems: 'center',
+                      fontSize: '12px',
+                      color: 'var(--admin-text-secondary)',
+                    }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                      <LibraryBig size={12} />
+                      {v.subject_name || 'Subject'}
+                      <ChevronRight size={11} />
+                      {v.chapter_title || 'Chapter'}
+                      <ChevronRight size={11} />
+                      <strong style={{ color: 'var(--admin-primary)' }}>{v.topic_title || 'Topic'}</strong>
                     </span>
-                    <span>•</span>
-                    <span style={{ backgroundColor: 'rgba(56, 189, 248, 0.1)', color: '#38BDF8', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                      ⏱️ Duration: {formatDuration(durationSec)} ({durationSec}s)
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        backgroundColor: 'var(--admin-primary-soft)',
+                        color: 'var(--admin-primary)',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-sm)',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <Clock size={11} />
+                      Duration: {formatDuration(durationSec)} ({durationSec}s)
                     </span>
                     {v.source_start_page && (
-                      <span style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'var(--admin-text)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--admin-border)' }}>
-                        📖 Pages {v.source_start_page}–{v.source_end_page || v.source_start_page}
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          backgroundColor: 'var(--admin-surface)',
+                          color: 'var(--admin-text)',
+                          padding: '2px 8px',
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid var(--admin-border)',
+                        }}
+                      >
+                        <BookOpen size={11} />
+                        Pages {v.source_start_page}–{v.source_end_page || v.source_start_page}
                       </span>
                     )}
                   </div>
 
                   {/* Learning Objective */}
                   {v.learning_objective && (
-                    <div style={{ padding: '8px 12px', borderRadius: '6px', backgroundColor: 'var(--admin-surface)', borderLeft: '3px solid #818CF8', fontSize: '13px', color: 'var(--admin-text)' }}>
-                      <strong style={{ color: '#818CF8' }}>Learning Objective:</strong> {v.learning_objective}
+                    <div
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--admin-surface)',
+                        borderLeft: '3px solid var(--admin-primary)',
+                        fontSize: '13px',
+                        color: 'var(--admin-text)',
+                      }}
+                    >
+                      <strong style={{ color: 'var(--admin-primary)' }}>Learning Objective:</strong> {v.learning_objective}
                     </div>
                   )}
 
                   {/* Content Outline */}
                   {v.content_outline && v.content_outline.length > 0 && (
-                    <div style={{ backgroundColor: 'var(--admin-surface)', borderRadius: '6px', padding: '10px 14px', border: '1px solid var(--admin-border)' }}>
-                      <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--admin-text-secondary)', marginBottom: '6px' }}>
+                    <div
+                      style={{
+                        backgroundColor: 'var(--admin-surface)',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: '10px 14px',
+                        border: '1px solid var(--admin-border)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          color: 'var(--admin-text-secondary)',
+                          marginBottom: '6px',
+                        }}
+                      >
                         Content Outline & Semantic Units:
                       </div>
-                      <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: 'var(--admin-text)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <ul
+                        style={{
+                          margin: 0,
+                          paddingLeft: '18px',
+                          fontSize: '12px',
+                          color: 'var(--admin-text)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                        }}
+                      >
                         {v.content_outline.map((item, idx) => (
                           <li key={idx}>{item}</li>
                         ))}
@@ -621,263 +681,224 @@ export const AdminVideoPlans: React.FC<AdminVideoPlansProps> = ({ onNavigate, in
         )}
       </SurfacePanel>
 
+      {/* Bulk Approve Confirmation */}
+      <ConfirmDialog
+        open={confirmBulkTopicId !== null}
+        title="Approve All Video Plans in Topic"
+        message="Approve all video plans for this topic? Approved plans will proceed to script synthesis."
+        confirmLabel="Approve All"
+        danger
+        onConfirm={() => confirmBulkTopicId !== null && handleBulkApproveTopic(confirmBulkTopicId)}
+        onCancel={() => setConfirmBulkTopicId(null)}
+      />
+
       {/* Edit Video Plan Modal */}
-      {editingVideo && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--admin-surface)',
-              border: '1px solid var(--admin-border)',
-              borderRadius: '12px',
-              width: '100%',
-              maxWidth: '600px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '18px',
-              boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)' }}>
-                Edit Video Plan #{editingVideo.sequence_number}
-              </h2>
-              <button onClick={() => setEditingVideo(null)} style={{ background: 'none', border: 'none', color: 'var(--admin-text-secondary)', fontSize: '18px', cursor: 'pointer' }}>
-                ✕
-              </button>
-            </div>
+      <Modal
+        open={!!editingVideo}
+        onClose={() => {
+          if (!savingEdit) setEditingVideo(null);
+        }}
+        title={editingVideo ? `Edit Video Plan #${editingVideo.sequence_number}` : 'Edit Video Plan'}
+        subtitle="Adjust segmentation metadata before approving for script synthesis."
+        maxWidth={600}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setEditingVideo(null)} disabled={savingEdit}>
+              Cancel
+            </button>
+            <button type="submit" form="edit-video-plan-form" className="adm-btn adm-btn-primary" disabled={savingEdit}>
+              {savingEdit ? 'Saving…' : 'Save Plan'}
+            </button>
+          </>
+        }
+      >
+        <form id="edit-video-plan-form" onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <FormField
+            label="Video Title"
+            name="vp-title"
+            required
+            value={editFormData.title || ''}
+            onChange={(val) => setEditFormData({ ...editFormData, title: val })}
+          />
 
-            <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '4px' }}>
-                  Video Title *
-                </label>
-                <input
-                  type="text"
-                  value={editFormData.title || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '4px' }}>
-                    Seq # *
-                  </label>
-                  <input
-                    type="number"
-                    value={editFormData.sequence_number || 1}
-                    onChange={(e) => setEditFormData({ ...editFormData, sequence_number: Number(e.target.value) })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '6px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
-                    required
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '4px' }}>
-                    Start Page
-                  </label>
-                  <input
-                    type="number"
-                    value={editFormData.source_start_page || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, source_start_page: Number(e.target.value) })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '6px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '4px' }}>
-                    End Page
-                  </label>
-                  <input
-                    type="number"
-                    value={editFormData.source_end_page || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, source_end_page: Number(e.target.value) })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '6px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '4px' }}>
-                  Target Duration (Seconds, ~300-360s)
-                </label>
-                <input
-                  type="number"
-                  value={editFormData.estimated_duration_seconds || 330}
-                  onChange={(e) => setEditFormData({ ...editFormData, estimated_duration_seconds: Number(e.target.value) })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '4px' }}>
-                  Learning Objective
-                </label>
-                <textarea
-                  rows={2}
-                  value={editFormData.learning_objective || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, learning_objective: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--admin-text)', marginBottom: '4px' }}>
-                  Content Outline (One item per line)
-                </label>
-                <textarea
-                  rows={4}
-                  value={(editFormData.content_outline || []).join('\n')}
-                  onChange={(e) => setEditFormData({ ...editFormData, content_outline: e.target.value.split('\n').filter(Boolean) })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'var(--admin-bg)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button
-                  type="button"
-                  onClick={() => setEditingVideo(null)}
-                  style={{ padding: '8px 16px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingEdit}
-                  style={{ padding: '8px 20px', borderRadius: '6px', backgroundColor: 'var(--admin-primary)', color: '#FFF', border: 'none', fontWeight: 600 }}
-                >
-                  {savingEdit ? 'Saving...' : 'Save Plan'}
-                </button>
-              </div>
-            </form>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+            <FormField
+              label="Seq #"
+              name="vp-seq"
+              type="number"
+              required
+              value={editFormData.sequence_number || 1}
+              onChange={(val) => setEditFormData({ ...editFormData, sequence_number: Number(val) })}
+            />
+            <FormField
+              label="Start Page"
+              name="vp-start-page"
+              type="number"
+              value={editFormData.source_start_page || ''}
+              onChange={(val) => setEditFormData({ ...editFormData, source_start_page: val ? Number(val) : undefined })}
+            />
+            <FormField
+              label="End Page"
+              name="vp-end-page"
+              type="number"
+              value={editFormData.source_end_page || ''}
+              onChange={(val) => setEditFormData({ ...editFormData, source_end_page: val ? Number(val) : undefined })}
+            />
           </div>
-        </div>
-      )}
+
+          <FormField
+            label="Target Duration (Seconds, ~300-360s)"
+            name="vp-duration"
+            type="number"
+            value={editFormData.estimated_duration_seconds || 330}
+            onChange={(val) => setEditFormData({ ...editFormData, estimated_duration_seconds: Number(val) })}
+          />
+
+          <FormField
+            label="Learning Objective"
+            name="vp-objective"
+            type="textarea"
+            value={editFormData.learning_objective || ''}
+            onChange={(val) => setEditFormData({ ...editFormData, learning_objective: val })}
+          />
+
+          <FormField
+            label="Content Outline (One item per line)"
+            name="vp-outline"
+            type="textarea"
+            value={(editFormData.content_outline || []).join('\n')}
+            onChange={(val) => setEditFormData({ ...editFormData, content_outline: val.split('\n').filter(Boolean) })}
+          />
+        </form>
+      </Modal>
 
       {/* Safe Regeneration Comparison Modal */}
-      {regenPreview && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '24px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--admin-surface)',
-              border: '1px solid var(--admin-border)',
-              borderRadius: '12px',
-              width: '100%',
-              maxWidth: '850px',
-              maxHeight: '85vh',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-              overflow: 'hidden',
-            }}
-          >
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)' }}>
-                  Video Plan Re-Segmentation Preview
-                </h2>
-                <p style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                  Topic: <strong>{regenPreview.topic_title}</strong> • Review candidate segmentation diff before applying.
-                </p>
-              </div>
-              <button onClick={() => setRegenPreview(null)} style={{ background: 'none', border: 'none', color: 'var(--admin-text-secondary)', fontSize: '18px', cursor: 'pointer' }}>
-                ✕
-              </button>
+      <Modal
+        open={!!regenPreview}
+        onClose={() => {
+          if (!applyingRegen) setRegenPreview(null);
+        }}
+        title="Video Plan Re-Segmentation Preview"
+        subtitle={regenPreview ? `Topic: ${regenPreview.topic_title} • Review candidate segmentation diff before applying.` : undefined}
+        maxWidth={850}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setRegenPreview(null)} disabled={applyingRegen}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="adm-btn adm-btn-primary"
+              onClick={handleConfirmRegeneration}
+              disabled={applyingRegen}
+            >
+              {applyingRegen ? 'Applying…' : 'Confirm & Apply Replacement'}
+            </button>
+          </>
+        }
+      >
+        {regenPreview && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--admin-success-soft)',
+                border: '1px solid #BBF7D0',
+                color: 'var(--admin-success)',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '8px',
+              }}
+            >
+              <ShieldCheck size={15} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>
+                <strong>Safe Regeneration:</strong> Existing approved video plans were NOT modified. Confirming will overwrite
+                the topic plan with the new segmentation.
+              </span>
             </div>
 
-            <div style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ padding: '10px 14px', borderRadius: '8px', backgroundColor: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38BDF8', fontSize: '13px' }}>
-                🛡️ <strong>Safe Regeneration:</strong> Existing approved video plans were NOT modified. Confirming will overwrite the topic plan with the new segmentation.
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                {/* Current Plans */}
-                <div style={{ padding: '14px', borderRadius: '8px', border: '1px solid var(--admin-border)', backgroundColor: 'var(--admin-bg)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--admin-text)' }}>Current Active Plan</h4>
-                    <span style={{ fontSize: '12px', color: '#10B981', fontWeight: 600 }}>{regenPreview.comparison.current_count} Videos</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {regenPreview.current_plans.map((p, idx) => (
-                      <div key={idx} style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'var(--admin-surface)', border: '1px solid var(--admin-border)', fontSize: '12px', color: 'var(--admin-text)' }}>
-                        <strong>Video {p.sequence_number}:</strong> {p.title}
-                        <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                          ⏱️ {formatDuration(p.estimated_duration_seconds)} • Status: {p.status}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              {/* Current Plans */}
+              <div
+                style={{
+                  padding: '14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--admin-border)',
+                  backgroundColor: 'var(--admin-surface-raised)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--admin-text)', margin: 0 }}>Current Active Plan</h4>
+                  <span style={{ fontSize: '12px', color: 'var(--admin-success)', fontWeight: 600 }}>
+                    {regenPreview.comparison.current_count} Videos
+                  </span>
                 </div>
-
-                {/* Candidate Plans */}
-                <div style={{ padding: '14px', borderRadius: '8px', border: '1px solid #38BDF8', backgroundColor: 'rgba(56, 189, 248, 0.05)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#38BDF8' }}>New Candidate Plan</h4>
-                    <span style={{ fontSize: '12px', color: '#38BDF8', fontWeight: 600 }}>{regenPreview.comparison.new_count} Videos</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {regenPreview.new_plans.map((p, idx) => (
-                      <div key={idx} style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'var(--admin-surface)', border: '1px solid rgba(56, 189, 248, 0.3)', fontSize: '12px', color: 'var(--admin-text)' }}>
-                        <strong>Video {p.sequence_number}:</strong> {p.title}
-                        <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                          ⏱️ {formatDuration(p.estimated_duration_seconds)} • Outline: {p.content_outline?.length || 0} items
-                        </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {regenPreview.current_plans.map((p: any, idx: number) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '8px',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--admin-surface)',
+                        border: '1px solid var(--admin-border)',
+                        fontSize: '12px',
+                        color: 'var(--admin-text)',
+                      }}
+                    >
+                      <strong>Video {p.sequence_number}:</strong> {p.title}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
+                        <Clock size={10} />
+                        {formatDuration(p.estimated_duration_seconds)} • Status: {p.status}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
 
-            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                onClick={() => setRegenPreview(null)}
-                style={{ padding: '8px 16px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', fontSize: '13px' }}
+              {/* Candidate Plans */}
+              <div
+                style={{
+                  padding: '14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--admin-primary)',
+                  backgroundColor: 'var(--admin-primary-soft)',
+                }}
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmRegeneration}
-                disabled={applyingRegen}
-                style={{ padding: '8px 18px', borderRadius: '6px', backgroundColor: 'var(--admin-primary)', color: '#FFFFFF', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-              >
-                {applyingRegen ? 'Applying...' : 'Confirm & Apply Replacement'}
-              </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--admin-primary)', margin: 0 }}>New Candidate Plan</h4>
+                  <span style={{ fontSize: '12px', color: 'var(--admin-primary)', fontWeight: 600 }}>
+                    {regenPreview.comparison.new_count} Videos
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {regenPreview.new_plans.map((p: any, idx: number) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '8px',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--admin-surface)',
+                        border: '1px solid var(--admin-border)',
+                        fontSize: '12px',
+                        color: 'var(--admin-text)',
+                      }}
+                    >
+                      <strong>Video {p.sequence_number}:</strong> {p.title}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
+                        <Clock size={10} />
+                        {formatDuration(p.estimated_duration_seconds)} • Outline: {p.content_outline?.length || 0} items
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };

@@ -143,8 +143,11 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
         sections = [s for s in all_sections if not s.get("is_toc")] or all_sections
 
         # Detect explicit module/chapter/unit title definitions in pages e.g. "Module-1: Introduction"
+        # NOTE: whitespace classes are restricted to [ \t] so the pattern cannot
+        # bridge across newlines (a standalone "Chapter\n7" line pair must not
+        # swallow the next body line as its title).
         explicit_modules: Dict[int, str] = {}
-        mod_pat = re.compile(r"(?i)^(?:module|unit|chapter)\s*[-:]?\s*(\d+)[\s:\-\.]+([^\n\r]+)", re.MULTILINE)
+        mod_pat = re.compile(r"(?i)^[ \t]*(?:module|unit|chapter)[ \t]*[-:]?[ \t]*(\d+)(?:[ \t]*[-:.\)]|[ \t]+)([^\n\r]+)", re.MULTILINE)
         for p in pages:
             for match in mod_pat.finditer(p.get("text", "")):
                 m_num = int(match.group(1))
@@ -243,7 +246,7 @@ class DeterministicCurriculumExtractor(CurriculumExtractor):
             # Fallback for documents or test mock pages that use explicit 'Chapter X: Title' lines
             full_text = "\n".join([p.get("text", "") for p in pages])
             chapter_regex = re.compile(
-                r"(?i)^\s*(?:chapter|unit|module)\s*(\d+)[\s:\-\.]+\s*([^\n\r]+)",
+                r"(?i)^[ \t]*(?:chapter|unit|module)[ \t]*(\d+)(?:[ \t]*[-:.\)]|[ \t]+)([^\n\r]+)",
                 re.MULTILINE
             )
             raw_matches = list(chapter_regex.finditer(full_text))

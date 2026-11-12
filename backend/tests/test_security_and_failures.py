@@ -1,4 +1,5 @@
 import io
+import os
 
 from app.core.security import create_token
 from app.models.models import Textbook, VideoUnit, Quiz, PipelineStatus, ReviewStatus
@@ -222,8 +223,23 @@ def test_threshold_settings_bounds(client):
 # 7. Media Delivery Verification (NFR-002, ARCH-V-005)
 # ============================================================================
 def test_pre_rendered_media_asset_available(client):
-    # Verify the physical static pre-rendered video asset is accessible via HTTP
+    # The legacy mock asset (sample.mp4) was removed by design: mock/pre-rendered
+    # placeholder media must NOT be served as pipeline output.
     res = client.get("/static/videos/sample.mp4")
-    assert res.status_code == 200
-    assert "video/mp4" in res.headers.get("content-type", "")
-    assert len(res.content) > 1000  # Valid MP4 payload exists
+    assert res.status_code == 404
+
+    # The static media mount must still deliver real media files correctly.
+    static_dir = os.path.join(os.path.dirname(__file__), "..", "static", "videos")
+    os.makedirs(static_dir, exist_ok=True)
+    probe_name = "_delivery_probe.mp4"
+    probe_path = os.path.join(static_dir, probe_name)
+    with open(probe_path, "wb") as f:
+        f.write(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 1200)
+    try:
+        res2 = client.get(f"/static/videos/{probe_name}")
+        assert res2.status_code == 200
+        assert "video" in res2.headers.get("content-type", "")
+        assert len(res2.content) > 1000  # Valid payload delivered
+    finally:
+        if os.path.exists(probe_path):
+            os.remove(probe_path)

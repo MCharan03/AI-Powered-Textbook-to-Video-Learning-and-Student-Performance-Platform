@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { Plus, Pencil, Trash2, Eye, ArrowRight, Search, RotateCcw, LibraryBig } from 'lucide-react';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { DataTable, Column } from '../../components/DataTable';
 import { CurriculumTree } from '../../components/CurriculumTree';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { MessageBanner } from '../../components/admin/MessageBanner';
+import { Modal } from '../../components/admin/Modal';
+import { ConfirmDialog } from '../../components/admin/ConfirmDialog';
+import { ActionMenu } from '../../components/admin/ActionMenu';
+import { FormField } from '../../components/admin/FormField';
+import { LoadingState } from '../../components/admin/LoadingState';
+import { EmptyState } from '../../components/admin/EmptyState';
+import { Pagination } from '../../components/admin/Pagination';
 import { api } from '../../lib/api';
 import { SubjectItem, SubjectDetail, PaginatedResponse } from '../../lib/types';
 
@@ -41,6 +51,10 @@ export const AdminSubjects: React.FC<AdminSubjectsProps> = ({ onNavigate, select
   const [chapterNumber, setChapterNumber] = useState(1);
   const [chapterTitle, setChapterTitle] = useState('');
   const [chapterDescription, setChapterDescription] = useState('');
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<SubjectItem | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -144,19 +158,25 @@ export const AdminSubjects: React.FC<AdminSubjectsProps> = ({ onNavigate, select
     }
   };
 
-  const handleDeleteSubject = async (s: SubjectItem) => {
-    if (!window.confirm(`Are you sure you want to delete subject '${s.name}' and all its chapters/topics?`)) {
-      return;
-    }
+  const requestDeleteSubject = (s: SubjectItem) => {
+    setDeleteTarget(s);
+  };
+
+  const handleDeleteSubject = async () => {
+    if (!deleteTarget) return;
     try {
-      await api.deleteSubject(s.id);
-      setMessage({ text: `Subject ${s.name} deleted.`, type: 'success' });
-      if (selectedSubjectDetail?.id === s.id) {
+      setDeleteLoading(true);
+      await api.deleteSubject(deleteTarget.id);
+      setMessage({ text: `Subject ${deleteTarget.name} deleted.`, type: 'success' });
+      if (selectedSubjectDetail?.id === deleteTarget.id) {
         setSelectedSubjectDetail(null);
       }
+      setDeleteTarget(null);
       fetchSubjects();
     } catch (err: any) {
       setMessage({ text: err.message, type: 'error' });
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -199,198 +219,96 @@ export const AdminSubjects: React.FC<AdminSubjectsProps> = ({ onNavigate, select
     {
       key: 'chapters_count',
       header: 'Chapters',
+      align: 'right',
       render: (row) => (
         <span style={{ fontWeight: 600, color: 'var(--admin-primary)' }}>
-          {row.chapters_count} Chapters
+          {row.chapters_count ?? '—'}
         </span>
       ),
     },
     {
       key: 'students_count',
       header: 'Enrolled Students',
+      align: 'right',
       render: (row) => (
-        <span style={{ color: '#60A5FA' }}>
-          {row.students_count} Students
+        <span style={{ color: 'var(--admin-text-secondary)' }}>
+          {row.students_count ?? '—'}
         </span>
       ),
     },
     {
       key: 'actions',
       header: 'Actions',
-      width: '180px',
+      width: '72px',
       render: (row) => (
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => openDetail(row.id)}
-            style={{
-              padding: '4px 10px',
-              borderRadius: '4px',
-              border: '1px solid var(--admin-border)',
-              backgroundColor: 'transparent',
-              color: 'var(--admin-text)',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            Curriculum
-          </button>
-          <button
-            onClick={() => openEditModal(row)}
-            style={{
-              padding: '4px 10px',
-              borderRadius: '4px',
-              border: '1px solid var(--admin-border)',
-              backgroundColor: 'transparent',
-              color: '#60A5FA',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => handleDeleteSubject(row)}
-            style={{
-              padding: '4px 8px',
-              borderRadius: '4px',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              backgroundColor: 'transparent',
-              color: '#EF4444',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            Delete
-          </button>
-        </div>
+        <ActionMenu
+          ariaLabel={`Actions for ${row.name}`}
+          items={[
+            {
+              label: 'Curriculum',
+              icon: <Eye size={14} />,
+              onClick: () => openDetail(row.id),
+            },
+            {
+              label: 'Edit',
+              icon: <Pencil size={14} />,
+              onClick: () => openEditModal(row),
+            },
+            {
+              label: 'Delete',
+              icon: <Trash2 size={14} />,
+              danger: true,
+              onClick: () => requestDeleteSubject(row),
+            },
+          ]}
+        />
       ),
     },
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Top Banner */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)' }}>
-            Subject & Curriculum Management
-          </h1>
-          <p style={{ color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
-            Configure subjects, structure chapters, topics, and build the curriculum tree for AI textbook pipelines.
-          </p>
-        </div>
-        <button
-          onClick={openCreateModal}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px',
-            border: 'none',
-            backgroundColor: 'var(--admin-primary)',
-            color: '#FFFFFF',
-            fontWeight: 600,
-            fontSize: '13px',
-            cursor: 'pointer',
-          }}
-        >
-          + Add New Subject
-        </button>
-      </div>
-
-      {message && (
-        <div
-          style={{
-            padding: '12px 16px',
-            borderRadius: '8px',
-            backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            border: `1px solid ${message.type === 'success' ? '#10B981' : '#EF4444'}`,
-            color: message.type === 'success' ? '#34D399' : '#F87171',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <span>{message.text}</span>
-          <button
-            onClick={() => setMessage(null)}
-            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
-          >
-            ✕
+      <PageHeader
+        title="Subject & Curriculum Management"
+        description="Configure subjects, structure chapters, topics, and build the curriculum tree for AI textbook pipelines."
+        actions={
+          <button className="adm-btn adm-btn-primary" onClick={openCreateModal}>
+            <Plus size={15} />
+            Add New Subject
           </button>
-        </div>
-      )}
+        }
+      />
+
+      <MessageBanner message={message} onDismiss={() => setMessage(null)} />
 
       {/* Filter / Search Panel */}
       <SurfacePanel title="Filter Subjects">
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
-          <div style={{ flex: '1 1 220px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-              Subject Name
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Mathematics"
-              value={nameFilter}
-              onChange={(e) => setNameFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                color: 'var(--admin-text)',
-                fontSize: '13px',
-              }}
-            />
-          </div>
-          <div style={{ flex: '1 1 180px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-              Class / Grade
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. 11th Grade"
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                color: 'var(--admin-text)',
-                fontSize: '13px',
-              }}
-            />
-          </div>
+          <FormField
+            label="Subject Name"
+            name="subject-name-filter"
+            type="text"
+            value={nameFilter}
+            onChange={setNameFilter}
+            placeholder="e.g. Mathematics"
+            style={{ flex: '1 1 220px' }}
+          />
+          <FormField
+            label="Class / Grade"
+            name="subject-class-filter"
+            type="text"
+            value={classFilter}
+            onChange={setClassFilter}
+            placeholder="e.g. 11th Grade"
+            style={{ flex: '1 1 180px' }}
+          />
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              type="submit"
-              style={{
-                padding: '8px 16px',
-                borderRadius: '6px',
-                border: 'none',
-                backgroundColor: 'var(--admin-primary)',
-                color: '#FFFFFF',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
+            <button type="submit" className="adm-btn adm-btn-primary">
+              <Search size={14} />
               Filter
             </button>
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '6px',
-                border: '1px solid var(--admin-border)',
-                backgroundColor: 'transparent',
-                color: 'var(--admin-text-secondary)',
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
-            >
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={handleClearFilters}>
+              <RotateCcw size={14} />
               Reset
             </button>
           </div>
@@ -398,57 +316,30 @@ export const AdminSubjects: React.FC<AdminSubjectsProps> = ({ onNavigate, select
       </SurfacePanel>
 
       {/* Main Grid: Subjects List + Selected Subject Curriculum Hierarchy */}
-      <div style={{ display: 'grid', gridTemplateColumns: selectedSubjectDetail ? '1fr 1fr' : '1fr', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: selectedSubjectDetail ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)', gap: '24px' }}>
         {/* Subjects Data Table */}
         <SurfacePanel title={`Subjects Catalog (${data.total} total)`}>
-          <DataTable columns={columns} data={data.items} emptyMessage="No subjects found matching the filter." />
+          {loading ? (
+            <LoadingState rows={5} />
+          ) : data.items.length === 0 ? (
+            <EmptyState
+              title="No subjects found"
+              description="No subjects match the current filter. Try resetting the filters or add a new subject."
+              icon={<LibraryBig size={20} />}
+            />
+          ) : (
+            <DataTable columns={columns} data={data.items} emptyMessage="No subjects found matching the filter." />
+          )}
 
           {/* Pagination */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginTop: '16px',
-              fontSize: '13px',
-              color: 'var(--admin-text-secondary)',
-            }}
-          >
-            <div>
-              Showing {data.items.length} of {data.total} (Page {data.page} of {data.total_pages})
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--admin-border)',
-                  backgroundColor: page <= 1 ? 'transparent' : 'rgba(255, 255, 255, 0.05)',
-                  color: page <= 1 ? 'rgba(255, 255, 255, 0.2)' : 'var(--admin-text)',
-                  cursor: page <= 1 ? 'not-allowed' : 'pointer',
-                }}
-              >
-                Prev
-              </button>
-              <span style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{page}</span>
-              <button
-                disabled={page >= data.total_pages}
-                onClick={() => setPage((p) => Math.min(data.total_pages, p + 1))}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--admin-border)',
-                  backgroundColor: page >= data.total_pages ? 'transparent' : 'rgba(255, 255, 255, 0.05)',
-                  color: page >= data.total_pages ? 'rgba(255, 255, 255, 0.2)' : 'var(--admin-text)',
-                  cursor: page >= data.total_pages ? 'not-allowed' : 'pointer',
-                }}
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          <Pagination
+            page={page}
+            totalPages={data.total_pages}
+            total={data.total}
+            pageSize={pageSize}
+            onPageChange={(p) => setPage(p)}
+            onPageSizeChange={(s) => setPageSize(s)}
+          />
         </SurfacePanel>
 
         {/* Selected Subject Curriculum Detail & Tree */}
@@ -458,19 +349,11 @@ export const AdminSubjects: React.FC<AdminSubjectsProps> = ({ onNavigate, select
               title={`Subject: ${selectedSubjectDetail.name}`}
               actions={
                 <button
+                  className="adm-btn adm-btn-primary adm-btn-sm"
                   onClick={() => setAddChapterModalOpen(true)}
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFFFFF',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
                 >
-                  + Add Chapter
+                  <Plus size={14} />
+                  Add Chapter
                 </button>
               }
             >
@@ -478,10 +361,10 @@ export const AdminSubjects: React.FC<AdminSubjectsProps> = ({ onNavigate, select
                 <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', marginBottom: '8px' }}>
                   {selectedSubjectDetail.description || 'No description provided.'}
                 </p>
-                <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
                   <span>Class: <strong style={{ color: 'var(--admin-text)' }}>{selectedSubjectDetail.class || 'All'}</strong></span>
                   <span>Chapters: <strong style={{ color: 'var(--admin-text)' }}>{selectedSubjectDetail.chapters.length}</strong></span>
-                  <span>Students: <strong style={{ color: 'var(--admin-text)' }}>{selectedSubjectDetail.students_count}</strong></span>
+                  <span>Students: <strong style={{ color: 'var(--admin-text)' }}>{selectedSubjectDetail.students_count ?? '—'}</strong></span>
                 </div>
               </div>
 
@@ -496,38 +379,33 @@ export const AdminSubjects: React.FC<AdminSubjectsProps> = ({ onNavigate, select
                       key={ch.id}
                       style={{
                         padding: '10px 14px',
-                        borderRadius: '6px',
-                        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid rgba(255, 255, 255, 0.05)',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: 'var(--admin-surface-raised)',
+                        border: '1px solid var(--admin-border)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
+                        gap: '10px',
+                        flexWrap: 'wrap',
                       }}
                     >
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <span style={{ fontWeight: 700, color: 'var(--admin-primary)', marginRight: '8px' }}>
                           CH {ch.chapter_number}:
                         </span>
                         <span style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{ch.title}</span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
                         <span style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
-                          {ch.topics_count} Topics
+                          {ch.topics_count ?? '—'} Topics
                         </span>
                         {onNavigate && (
                           <button
+                            className="adm-btn adm-btn-secondary adm-btn-sm"
                             onClick={() => onNavigate('admin-chapters', { chapterId: ch.id })}
-                            style={{
-                              padding: '3px 8px',
-                              borderRadius: '4px',
-                              border: '1px solid var(--admin-border)',
-                              backgroundColor: 'transparent',
-                              color: '#60A5FA',
-                              fontSize: '11px',
-                              cursor: 'pointer',
-                            }}
                           >
-                            Manage Topics →
+                            Manage Topics
+                            <ArrowRight size={13} />
                           </button>
                         )}
                       </div>
@@ -547,267 +425,111 @@ export const AdminSubjects: React.FC<AdminSubjectsProps> = ({ onNavigate, select
       </div>
 
       {/* Create / Edit Subject Modal */}
-      {createModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--admin-surface)',
-              border: '1px solid var(--admin-border)',
-              borderRadius: '12px',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '500px',
-            }}
-          >
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)', marginBottom: '16px' }}>
-              {editingSubject ? `Edit Subject: ${editingSubject.name}` : 'Create New Subject'}
-            </h2>
-            <form onSubmit={handleSaveSubject} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Subject Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Data Structures & Algorithms"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Class / Grade Level
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 11th Grade / B.Tech Year 2"
-                  value={formClass}
-                  onChange={(e) => setFormClass(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Curriculum Description
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Overview of subject learning objectives and prerequisites..."
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                    resize: 'vertical',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={() => setCreateModalOpen(false)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'transparent',
-                    color: 'var(--admin-text-secondary)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    padding: '8px 20px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFFFFF',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {submitting ? 'Saving...' : (editingSubject ? 'Save Changes' : 'Create Subject')}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        title={editingSubject ? `Edit Subject: ${editingSubject.name}` : 'Create New Subject'}
+        subtitle={editingSubject ? 'Update subject details and curriculum overview.' : 'Add a new subject to the curriculum catalog.'}
+        maxWidth={500}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setCreateModalOpen(false)} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" form="subject-form" className="adm-btn adm-btn-primary" disabled={submitting}>
+              {submitting ? 'Saving…' : editingSubject ? 'Save Changes' : 'Create Subject'}
+            </button>
+          </>
+        }
+      >
+        <form id="subject-form" onSubmit={handleSaveSubject} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <FormField
+            label="Subject Name"
+            name="subject-name"
+            type="text"
+            required
+            placeholder="e.g. Data Structures & Algorithms"
+            value={formName}
+            onChange={setFormName}
+          />
+          <FormField
+            label="Class / Grade Level"
+            name="subject-class"
+            type="text"
+            placeholder="e.g. 11th Grade / B.Tech Year 2"
+            value={formClass}
+            onChange={setFormClass}
+          />
+          <FormField
+            label="Curriculum Description"
+            name="subject-description"
+            type="textarea"
+            placeholder="Overview of subject learning objectives and prerequisites..."
+            value={formDescription}
+            onChange={setFormDescription}
+          />
+        </form>
+      </Modal>
 
       {/* Add Chapter Modal */}
-      {addChapterModalOpen && selectedSubjectDetail && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--admin-surface)',
-              border: '1px solid var(--admin-border)',
-              borderRadius: '12px',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '500px',
-            }}
-          >
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)', marginBottom: '16px' }}>
-              Add Chapter to {selectedSubjectDetail.name}
-            </h2>
-            <form onSubmit={handleAddChapter} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Chapter Number *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  value={chapterNumber}
-                  onChange={(e) => setChapterNumber(Number(e.target.value))}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
+      <Modal
+        open={addChapterModalOpen && !!selectedSubjectDetail}
+        onClose={() => setAddChapterModalOpen(false)}
+        title={`Add Chapter to ${selectedSubjectDetail?.name || ''}`}
+        subtitle="Chapters are the second level of the curriculum hierarchy."
+        maxWidth={500}
+        footer={
+          <>
+            <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setAddChapterModalOpen(false)} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" form="add-chapter-form" className="adm-btn adm-btn-primary" disabled={submitting}>
+              {submitting ? 'Adding…' : 'Add Chapter'}
+            </button>
+          </>
+        }
+      >
+        <form id="add-chapter-form" onSubmit={handleAddChapter} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <FormField
+            label="Chapter Number"
+            name="chapter-number"
+            type="number"
+            required
+            min={1}
+            value={chapterNumber}
+            onChange={(v) => setChapterNumber(Number(v))}
+          />
+          <FormField
+            label="Chapter Title"
+            name="chapter-title"
+            type="text"
+            required
+            placeholder="e.g. Newton's Laws of Motion"
+            value={chapterTitle}
+            onChange={setChapterTitle}
+          />
+          <FormField
+            label="Description"
+            name="chapter-description"
+            type="textarea"
+            placeholder="Key concepts covered in this chapter..."
+            value={chapterDescription}
+            onChange={setChapterDescription}
+          />
+        </form>
+      </Modal>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Chapter Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Newton's Laws of Motion"
-                  value={chapterTitle}
-                  onChange={(e) => setChapterTitle(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
-                  Description
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Key concepts covered in this chapter..."
-                  value={chapterDescription}
-                  onChange={(e) => setChapterDescription(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                    resize: 'vertical',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={() => setAddChapterModalOpen(false)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: 'transparent',
-                    color: 'var(--admin-text-secondary)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    padding: '8px 20px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFFFFF',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {submitting ? 'Adding...' : 'Add Chapter'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Delete Subject Confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Subject"
+        message={`Are you sure you want to delete subject '${deleteTarget?.name || ''}' and all its chapters/topics? This action cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        loading={deleteLoading}
+        onConfirm={handleDeleteSubject}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 };

@@ -2,50 +2,110 @@ import React, { useState, useEffect } from 'react';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { QuizOptionCard } from '../../components/QuizOptionCard';
 import { api } from '../../lib/api';
-import { AdaptiveQuiz } from '../../lib/types';
+import { TopicQuiz, QuestionResultItem } from '../../lib/types';
 
 interface StudentAdaptiveQuizProps {
   onNavigate: (route: string, params?: any) => void;
   topicId?: number;
 }
 
+/**
+ * PHASE 3B: Adaptive remediation is now a REAL graded flow.
+ * 1. A persisted adaptive quiz is created for the student's weak concepts
+ *    (POST /learn/topics/{id}/adaptive-quiz).
+ * 2. Answers are submitted through the standard grading contract
+ *    (POST /learn/quizzes/{id}/submit) — the attempt is stored and feeds
+ *    mastery metrics and future adaptive targeting.
+ * 3. Errors surface as inline banners; completion requires a server result.
+ */
 export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavigate, topicId }) => {
-  const [adaptiveQuiz, setAdaptiveQuiz] = useState<AdaptiveQuiz | null>(null);
+  const [adaptiveQuiz, setAdaptiveQuiz] = useState<TopicQuiz | null>(null);
+  const [weakConcepts, setWeakConcepts] = useState<string[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [completed, setCompleted] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [questionResults, setQuestionResults] = useState<QuestionResultItem[]>([]);
+  const [resultSummary, setResultSummary] = useState<{
+    percentage: number; passed: boolean; weak_concepts: string[]; recommendation: string;
+  } | null>(null);
 
   useEffect(() => {
-    const fetchAdaptive = async () => {
+    const startSession = async () => {
       try {
         setLoading(true);
+        setLoadError(null);
         let targetTopicId = topicId;
         if (!targetTopicId) {
           const summary = await api.getProgressSummary();
           targetTopicId = summary.resume_learning?.topic_id || summary.quizzes?.[0]?.topic_id;
         }
-        const data = await api.getAdaptiveQuiz(targetTopicId);
-        setAdaptiveQuiz(data);
+        if (!targetTopicId) {
+          setLoadError('No topic is ready for adaptive remediation yet. Complete a topic quiz first.');
+          return;
+        }
+
+        // Read-only targeted concepts (for display), then persist a real adaptive quiz
+        try {
+          const preview = await api.getAdaptiveQuiz(targetTopicId);
+          setWeakConcepts(preview.weak_concepts_targeted || []);
+        } catch {
+          // Preview is best-effort; the persisted quiz itself is what matters
+        }
+
+        const quiz = await api.startAdaptiveQuiz(targetTopicId);
+        if (!quiz.questions || quiz.questions.length === 0) {
+          setLoadError('No adaptive questions could be generated for this topic yet. Try again after completing a topic quiz.');
+          return;
+        }
+        setAdaptiveQuiz(quiz);
       } catch (err: any) {
-        setError(err.message || 'Adaptive quiz session could not be retrieved.');
+        setLoadError(err?.message || 'Adaptive quiz session could not be started.');
       } finally {
         setLoading(false);
       }
     };
-    fetchAdaptive();
+    startSession();
   }, [topicId]);
 
   const handleSelect = (qId: number, letter: string) => {
     setSelectedAnswers((prev) => ({ ...prev, [String(qId)]: letter }));
   };
 
-  const handleFinish = () => {
-    setCompleted(true);
+  const handleFinish = async () => {
+    if (!adaptiveQuiz) return;
+    setSubmitError(null);
+
+    const unanswered = adaptiveQuiz.questions.filter((q) => !selectedAnswers[String(q.id)]);
+    if (unanswered.length > 0) {
+      setSubmitError(`${unanswered.length} question${unanswered.length > 1 ? 's' : ''} still unanswered. Please answer every question before completing remediation.`);
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const numericAnswers: Record<string, number> = {};
+      for (const [qId, letter] of Object.entries(selectedAnswers)) {
+        numericAnswers[qId] = letter.charCodeAt(0) - 65;
+      }
+      const res: any = await api.submitDetailedQuizAttempt(adaptiveQuiz.id, numericAnswers);
+      setQuestionResults(res.question_results || []);
+      setResultSummary({
+        percentage: res.percentage !== undefined ? res.percentage : (res.score || 0),
+        passed: !!res.passed,
+        weak_concepts: res.weak_concepts || [],
+        recommendation: res.recommendation || '',
+      });
+    } catch (err: any) {
+      setSubmitError(err?.message || 'Submission failed. Your answers were not graded — please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  if (error) {
+  if (loadError) {
     return (
       <SurfacePanel>
         <div style={{ textAlign: 'center', padding: '32px 16px' }}>
@@ -54,7 +114,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
             No Active Remediation Session
           </h2>
           <p style={{ fontSize: '14px', color: '#64748B', marginTop: '6px', maxWidth: '480px', margin: '6px auto 0' }}>
-            {error}
+            {loadError}
           </p>
           <button
             onClick={() => onNavigate('student-quiz')}
@@ -77,51 +137,107 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
     );
   }
 
-  if (completed) {
+  if (resultSummary && adaptiveQuiz) {
     return (
-      <div style={{ maxWidth: '640px', margin: '0 auto', textAlign: 'center' }}>
+      <div style={{ maxWidth: '720px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0F172A', textAlign: 'center' }}>
+          Adaptive Remediation Results
+        </h1>
         <SurfacePanel>
-          <div style={{ fontSize: '36px', color: '#10B981', marginBottom: '12px' }}>🎉</div>
-          <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A' }}>
-            Adaptive Remediation Complete!
-          </h2>
-          <p style={{ fontSize: '14px', color: '#64748B', marginTop: '8px' }}>
-            You have reinforced your targeted weak concepts. Your mastery metrics have been updated.
-          </p>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '20px' }}>
-            <button
-              onClick={() => onNavigate('student-mastery')}
-              style={{
-                padding: '10px 20px',
-                borderRadius: '8px',
-                backgroundColor: '#2563EB',
-                color: '#FFF',
-                border: 'none',
-                fontWeight: 600,
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
-            >
-              View Updated Mastery →
-            </button>
-            <button
-              onClick={() => onNavigate('student-dashboard')}
-              style={{
-                padding: '10px 20px',
-                borderRadius: '8px',
-                backgroundColor: '#F1F5F9',
-                color: '#475569',
-                border: '1px solid #CBD5E1',
-                fontWeight: 600,
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
-            >
-              Back to Dashboard
-            </button>
+          <div style={{ textAlign: 'center', padding: '16px' }}>
+            <div style={{ fontSize: '36px', color: resultSummary.passed ? '#10B981' : '#F59E0B', marginBottom: '12px' }}>
+              {resultSummary.passed ? '🎉' : '📝'}
+            </div>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A' }}>
+              {resultSummary.percentage}% — {resultSummary.passed ? 'Concepts Reinforced' : 'Keep Practicing'}
+            </h2>
+            <p style={{ fontSize: '14px', color: '#64748B', marginTop: '8px' }}>
+              {resultSummary.recommendation || 'Your mastery metrics have been updated.'}
+            </p>
+            {resultSummary.weak_concepts.length > 0 && (
+              <div style={{ marginTop: '14px' }}>
+                <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 500 }}>Still targeting:</span>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '6px' }}>
+                  {resultSummary.weak_concepts.map((c, idx) => (
+                    <span key={idx} style={{
+                      padding: '2px 8px', borderRadius: '12px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#DC2626',
+                      fontSize: '11px', fontWeight: 600,
+                    }}>
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '20px' }}>
+              <button
+                onClick={() => onNavigate('student-mastery')}
+                style={{
+                  padding: '10px 20px', borderRadius: '8px', backgroundColor: '#2563EB',
+                  color: '#FFF', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                }}
+              >
+                View Updated Mastery →
+              </button>
+              <button
+                onClick={() => onNavigate('student-dashboard')}
+                style={{
+                  padding: '10px 20px', borderRadius: '8px', backgroundColor: '#F1F5F9',
+                  color: '#475569', border: '1px solid #CBD5E1', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                }}
+              >
+                Back to Dashboard
+              </button>
+            </div>
           </div>
         </SurfacePanel>
+
+        {questionResults.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1E293B' }}>Question Breakdown & Explanations</h2>
+            {questionResults.map((qr, qidx) => (
+              <div
+                key={qr.question_id || qidx}
+                style={{
+                  padding: '16px 20px', borderRadius: '12px',
+                  backgroundColor: qr.is_correct ? '#F0FDF4' : '#FEF2F2',
+                  border: `1px solid ${qr.is_correct ? '#BBF7D0' : '#FECACA'}`,
+                  display: 'flex', flexDirection: 'column', gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 600, fontSize: '14px', color: '#0F172A' }}>
+                    Q{qidx + 1}. {qr.question_text}
+                  </span>
+                  <span style={{
+                    fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '12px',
+                    backgroundColor: qr.is_correct ? '#16A34A' : '#DC2626', color: '#FFFFFF',
+                  }}>
+                    {qr.is_correct ? 'CORRECT' : 'INCORRECT'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '13px', color: '#475569' }}>
+                  Your Answer: <strong style={{ color: qr.is_correct ? '#16A34A' : '#DC2626' }}>{String(qr.selected_answer)}</strong> • Correct Answer: <strong style={{ color: '#16A34A' }}>{String(qr.correct_answer)}</strong>
+                </div>
+                {qr.explanation && (
+                  <div style={{ fontSize: '12px', color: '#334155', backgroundColor: 'rgba(255,255,255,0.7)', padding: '10px 12px', borderRadius: '8px', marginTop: '4px' }}>
+                    <strong>Explanation:</strong> {qr.explanation}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <SurfacePanel>
+        <div style={{ textAlign: 'center', padding: '24px' }}>Generating your targeted adaptive quiz...</div>
+      </SurfacePanel>
     );
   }
 
@@ -163,25 +279,37 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
         </div>
 
         {/* Targeted Weak Concepts Tags */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
-          <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 500 }}>Targeting:</span>
-          {adaptiveQuiz.weak_concepts_targeted.map((c, idx) => (
-            <span
-              key={idx}
-              style={{
-                padding: '2px 8px',
-                borderRadius: '12px',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                color: '#DC2626',
-                fontSize: '11px',
-                fontWeight: 600,
-              }}
-            >
-              {c}
-            </span>
-          ))}
-        </div>
+        {weakConcepts.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 500 }}>Targeting:</span>
+            {weakConcepts.map((c, idx) => (
+              <span
+                key={idx}
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  color: '#DC2626',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                }}
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
+
+      {submitError && (
+        <div style={{
+          padding: '12px 16px', borderRadius: '10px',
+          backgroundColor: '#FEF2F2', border: '1px solid #FECACA',
+          color: '#B91C1C', fontSize: '13px', fontWeight: 500,
+        }}>
+          ⚠ {submitError}
+        </div>
+      )}
 
       <SurfacePanel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -225,6 +353,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
             {isLast ? (
               <button
                 onClick={handleFinish}
+                disabled={submitting}
                 style={{
                   padding: '10px 24px',
                   borderRadius: '8px',
@@ -233,10 +362,11 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
                   border: 'none',
                   fontWeight: 600,
                   fontSize: '13px',
-                  cursor: 'pointer',
+                  cursor: submitting ? 'not-allowed' : 'pointer',
+                  opacity: submitting ? 0.6 : 1,
                 }}
               >
-                Complete Remediation ✓
+                {submitting ? 'Grading...' : 'Complete Remediation ✓'}
               </button>
             ) : (
               <button

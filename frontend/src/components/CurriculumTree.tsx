@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ChevronDown, ChevronRight, ListTree } from 'lucide-react';
 import { SubjectDetail, ChapterItem, TopicItem, SubtopicItem } from '../lib/types';
 
 interface CurriculumTreeProps {
@@ -52,7 +53,7 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '18px' }}>🌳</span>
+          <ListTree size={17} style={{ color: 'var(--admin-primary)', flexShrink: 0 }} />
           <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--admin-text)' }}>
             Curriculum Hierarchy Tree
           </h3>
@@ -62,7 +63,7 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
             style={{
               padding: '3px 10px',
               borderRadius: '12px',
-              backgroundColor: 'rgba(99, 102, 241, 0.15)',
+              backgroundColor: 'var(--admin-primary-soft)',
               color: 'var(--admin-primary)',
               fontSize: '12px',
               fontWeight: 600,
@@ -87,9 +88,9 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
               <div
                 key={ch.id}
                 style={{
-                  border: `1px solid ${isChActive ? 'var(--admin-primary)' : 'rgba(255, 255, 255, 0.05)'}`,
+                  border: `1px solid ${isChActive ? 'var(--admin-primary)' : 'var(--admin-border)'}`,
                   borderRadius: '8px',
-                  backgroundColor: isChActive ? 'rgba(99, 102, 241, 0.08)' : 'rgba(0, 0, 0, 0.15)',
+                  backgroundColor: isChActive ? 'var(--admin-primary-soft)' : 'var(--admin-surface-raised)',
                   overflow: 'hidden',
                 }}
               >
@@ -102,7 +103,7 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     cursor: onSelectChapter ? 'pointer' : 'default',
-                    borderBottom: isChExpanded ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+                    borderBottom: isChExpanded ? '1px solid var(--admin-border)' : 'none',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -116,9 +117,11 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
                         cursor: 'pointer',
                         fontSize: '12px',
                         padding: '2px 4px',
+                        display: 'flex',
+                        alignItems: 'center',
                       }}
                     >
-                      {isChExpanded ? '▼' : '▶'}
+                      {isChExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                     </button>
                     <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--admin-primary)' }}>
                       CH {ch.chapter_number}:
@@ -148,9 +151,9 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
                           <div
                             key={t.id}
                             style={{
-                              border: `1px solid ${isTopActive ? 'var(--admin-primary)' : 'rgba(255, 255, 255, 0.04)'}`,
+                              border: `1px solid ${isTopActive ? 'var(--admin-primary)' : 'var(--admin-border)'}`,
                               borderRadius: '6px',
-                              backgroundColor: isTopActive ? 'rgba(99, 102, 241, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                              backgroundColor: isTopActive ? 'var(--admin-primary-soft)' : 'transparent',
                               overflow: 'hidden',
                             }}
                           >
@@ -174,11 +177,13 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
                                     color: 'var(--admin-text-secondary)',
                                     cursor: 'pointer',
                                     fontSize: '11px',
+                                    display: 'flex',
+                                    alignItems: 'center',
                                   }}
                                 >
-                                  {isTopExpanded ? '▼' : '▶'}
+                                  {isTopExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                                 </button>
-                                <span style={{ fontSize: '12px', color: '#60A5FA', fontWeight: 600 }}>
+                                <span style={{ fontSize: '12px', color: 'var(--admin-primary)', fontWeight: 600 }}>
                                   §{t.sequence_number}
                                 </span>
                                 <span style={{ fontSize: '13px', color: 'var(--admin-text)' }}>
@@ -192,7 +197,7 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
 
                             {/* Subtopics Container */}
                             {isTopExpanded && (
-                              <div style={{ padding: '6px 12px 8px 30px', display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.03)' }}>
+                              <div style={{ padding: '6px 12px 8px 30px', display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid var(--admin-border)' }}>
                                 {!(t as any).subtopics || (t as any).subtopics.length === 0 ? (
                                   <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
                                     No subtopics.
@@ -207,7 +212,7 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
                                         style={{
                                           padding: '6px 10px',
                                           borderRadius: '4px',
-                                          backgroundColor: isSubActive ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                                          backgroundColor: isSubActive ? 'var(--admin-primary-soft)' : 'transparent',
                                           color: isSubActive ? 'var(--admin-primary)' : 'var(--admin-text)',
                                           fontSize: '12px',
                                           cursor: onSelectSubtopic ? 'pointer' : 'default',
@@ -216,7 +221,15 @@ export const CurriculumTree: React.FC<CurriculumTreeProps> = ({
                                           gap: '6px',
                                         }}
                                       >
-                                        <span style={{ color: 'var(--admin-text-secondary)' }}>•</span>
+                                        <span
+                                          style={{
+                                            width: '5px',
+                                            height: '5px',
+                                            borderRadius: '50%',
+                                            backgroundColor: 'var(--admin-text-secondary)',
+                                            flexShrink: 0,
+                                          }}
+                                        />
                                         <span>{st.title}</span>
                                       </div>
                                     );

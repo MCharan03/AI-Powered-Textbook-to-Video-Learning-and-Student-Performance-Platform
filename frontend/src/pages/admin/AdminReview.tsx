@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { PageHeader } from '../../components/admin/PageHeader';
+import { MessageBanner } from '../../components/admin/MessageBanner';
+import { SearchBar } from '../../components/admin/SearchBar';
+import { Modal } from '../../components/admin/Modal';
+import { LoadingState } from '../../components/admin/LoadingState';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { StatusBadge } from '../../components/StatusBadge';
 import { DataTable, Column } from '../../components/DataTable';
+import { Eye, RefreshCw, ShieldCheck, Check } from 'lucide-react';
 import { api } from '../../lib/api';
 import { ReviewItem } from '../../lib/types';
+
+const FILTER_OPTIONS = ['ALL', 'PENDING_REVIEW', 'APPROVED', 'PUBLISHED'] as const;
 
 export const AdminReview: React.FC = () => {
   const [items, setItems] = useState<ReviewItem[]>([]);
@@ -78,21 +86,18 @@ export const AdminReview: React.FC = () => {
       header: 'Type',
       render: (row) => (
         <span
-          style={{
-            padding: '2px 8px',
-            borderRadius: '4px',
-            fontSize: '11px',
-            fontWeight: 600,
-            backgroundColor: row.type === 'video' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-            color: row.type === 'video' ? '#818CF8' : '#34D399',
-            textTransform: 'uppercase',
-          }}
+          className="adm-badge"
+          style={
+            row.type === 'video'
+              ? { backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }
+              : { backgroundColor: 'var(--admin-success-soft)', color: 'var(--admin-success)' }
+          }
         >
           {row.type}
         </span>
       ),
     },
-    { key: 'topic_title', header: 'Associated Topic' },
+    { key: 'topic_title', header: 'Associated Topic', render: (row) => row.topic_title || '—' },
     {
       key: 'status',
       header: 'Review Status',
@@ -104,34 +109,20 @@ export const AdminReview: React.FC = () => {
       render: (row) => (
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
+            type="button"
+            className="adm-btn adm-btn-secondary adm-btn-sm"
             onClick={() => handleInspect(row)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              backgroundColor: '#334155',
-              color: '#F8FAFC',
-              border: 'none',
-              fontSize: '12px',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
           >
+            <Eye size={13} />
             Inspect
           </button>
           {row.status !== 'published' && (
             <button
+              type="button"
+              className="adm-btn adm-btn-primary adm-btn-sm"
               onClick={() => openApprovalModal(row)}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                backgroundColor: 'var(--admin-primary)',
-                color: '#FFF',
-                border: 'none',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
             >
+              <ShieldCheck size={13} />
               Approve Gate
             </button>
           )}
@@ -153,212 +144,187 @@ export const AdminReview: React.FC = () => {
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <div>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#F8FAFC' }}>Review Queue & Approval Gate</h1>
-        <p style={{ fontSize: '14px', color: '#94A3B8', marginTop: '4px' }}>
-          Enforce the mandatory human-in-the-loop review and approval gate before content is published to students.
-        </p>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <PageHeader
+        title="Review Queue & Approval Gate"
+        description="Enforce the mandatory human-in-the-loop review and approval gate before content is published to students."
+        actions={
+          <button type="button" className="adm-btn adm-btn-secondary" onClick={fetchItems} disabled={loading}>
+            <RefreshCw size={15} />
+            {loading ? 'Refreshing...' : 'Refresh Queue'}
+          </button>
+        }
+      />
 
       {toastMessage && (
-        <div
-          style={{
-            padding: '12px 18px',
-            borderRadius: '8px',
-            backgroundColor: 'rgba(16, 185, 129, 0.2)',
-            border: '1px solid #10B981',
-            color: '#10B981',
-            fontSize: '13px',
-            fontWeight: 600,
-          }}
-        >
-          ✓ {toastMessage}
-        </div>
+        <MessageBanner
+          message={{ text: toastMessage, type: 'success' }}
+          onDismiss={() => setToastMessage(null)}
+        />
       )}
 
       {errorMsg && (
-        <div
-          style={{
-            padding: '12px 18px',
-            borderRadius: '8px',
-            backgroundColor: 'rgba(239, 68, 68, 0.15)',
-            border: '1px solid #EF4444',
-            color: '#EF4444',
-            fontSize: '13px',
-            fontWeight: 600,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}
-        >
-          <span>⚠️ {errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: '14px' }}>✕</button>
-        </div>
+        <MessageBanner message={{ text: errorMsg, type: 'error' }} onDismiss={() => setErrorMsg(null)} />
       )}
 
       <SurfacePanel>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#F8FAFC', margin: 0 }}>
+        {/* Filter toolbar */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
+            marginBottom: '16px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <h2 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)', margin: 0 }}>
               Generated Content Queue ({filteredItems.length} of {items.length} Items)
             </h2>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {['ALL', 'PENDING_REVIEW', 'APPROVED', 'PUBLISHED'].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setFilterStatus(st)}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '20px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    border: '1px solid var(--admin-border)',
-                    backgroundColor: filterStatus === st ? 'var(--admin-primary, #6366f1)' : 'transparent',
-                    color: filterStatus === st ? '#FFF' : 'var(--admin-text-secondary)',
-                  }}
-                >
-                  {st.replace('_', ' ')}
-                </button>
-              ))}
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {FILTER_OPTIONS.map((st) => {
+                const active = filterStatus === st;
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setFilterStatus(st)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '999px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: `1px solid ${active ? 'var(--admin-primary)' : 'var(--admin-border)'}`,
+                      backgroundColor: active ? 'var(--admin-primary-soft)' : 'transparent',
+                      color: active ? 'var(--admin-primary)' : 'var(--admin-text-secondary)',
+                    }}
+                  >
+                    {st.replace('_', ' ')}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <input
-              type="text"
-              placeholder="Search content or topics..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid #334155',
-                backgroundColor: '#0F172A',
-                color: '#F8FAFC',
-                fontSize: '12px',
-                width: '200px'
-              }}
-            />
-            <button
-              onClick={fetchItems}
-              disabled={loading}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                backgroundColor: 'transparent',
-                border: '1px solid #334155',
-                color: '#94A3B8',
-                fontSize: '12px',
-                cursor: loading ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {loading ? 'Refreshing...' : '🔄 Refresh Queue'}
-            </button>
-          </div>
+          <SearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search content or topics..."
+            style={{ flex: '0 1 240px', minWidth: '180px' }}
+          />
         </div>
 
-        <DataTable
-          columns={columns}
-          data={filteredItems}
-          emptyMessage="Review queue is empty. All generated content has been processed."
-        />
+        {loading ? (
+          <LoadingState variant="table" rows={5} label="Loading review queue…" />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filteredItems}
+            emptyMessage="Review queue is empty. All generated content has been processed."
+          />
+        )}
       </SurfacePanel>
 
       {/* Inspect Item Modal */}
-      {inspectModalOpen && selectedItem && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '24px',
-          }}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: '700px',
-              maxHeight: '85vh',
-              overflowY: 'auto',
-              backgroundColor: '#1E293B',
-              borderRadius: '12px',
-              border: '1px solid #334155',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    color: selectedItem.type === 'video' ? '#818CF8' : '#34D399',
-                  }}
-                >
-                  {selectedItem.type} Inspection
-                </span>
-                <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#F8FAFC', marginTop: '4px' }}>
-                  {selectedItem.title}
-                </h2>
-                <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>
-                  Topic: {selectedItem.topic_title} • Status: <StatusBadge status={selectedItem.status || (selectedItem as any).review_status} />
-                </div>
-              </div>
+      {selectedItem && (
+        <Modal
+          open={inspectModalOpen}
+          onClose={() => setInspectModalOpen(false)}
+          title={selectedItem.title}
+          subtitle={`${selectedItem.type} inspection • Topic: ${selectedItem.topic_title || '—'}`}
+          maxWidth={700}
+          footer={
+            <>
               <button
+                type="button"
+                className="adm-btn adm-btn-secondary"
                 onClick={() => setInspectModalOpen(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#94A3B8',
-                  fontSize: '20px',
-                  cursor: 'pointer',
-                }}
               >
-                ✕
+                Close
               </button>
+              {selectedItem.status !== 'published' && (
+                <button
+                  type="button"
+                  className="adm-btn adm-btn-primary"
+                  onClick={() => openApprovalModal(selectedItem)}
+                >
+                  <ShieldCheck size={15} />
+                  Proceed to Approval
+                </button>
+              )}
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span
+                className="adm-badge"
+                style={
+                  selectedItem.type === 'video'
+                    ? { backgroundColor: 'var(--admin-primary-soft)', color: 'var(--admin-primary)' }
+                    : { backgroundColor: 'var(--admin-success-soft)', color: 'var(--admin-success)' }
+                }
+              >
+                {selectedItem.type}
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>Status:</span>
+              <StatusBadge status={selectedItem.status || (selectedItem as any).review_status} />
             </div>
 
             {/* Video specific inspection */}
             {selectedItem.type === 'video' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: '#0F172A', border: '1px solid #334155' }}>
-                  <div style={{ fontSize: '12px', color: '#94A3B8' }}>VIDEO METADATA</div>
-                  <div style={{ fontSize: '13px', color: '#F8FAFC', marginTop: '4px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--admin-bg)',
+                    border: '1px solid var(--admin-border)',
+                    fontSize: '13px',
+                    color: 'var(--admin-text)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--admin-text-secondary)' }}>
+                    Video Metadata
+                  </div>
+                  <div>
                     Duration: ~{selectedItem.details?.target_duration_minutes || (selectedItem as any).duration_seconds ? Math.round(((selectedItem as any).duration_seconds || 330) / 60 * 10) / 10 : 5.5} min ({selectedItem.details?.duration_seconds || (selectedItem as any).duration_seconds || 330}s)
                   </div>
                   {(selectedItem.details?.video_url || (selectedItem as any).video_url) && (
-                    <div style={{ fontSize: '13px', color: '#F8FAFC', marginTop: '2px' }}>
-                      Asset URL: <code style={{ color: '#818CF8' }}>{selectedItem.details?.video_url || (selectedItem as any).video_url}</code>
+                    <div style={{ overflowWrap: 'anywhere' }}>
+                      Asset URL:{' '}
+                      <code style={{ color: 'var(--admin-primary)', fontSize: '12px' }}>
+                        {selectedItem.details?.video_url || (selectedItem as any).video_url}
+                      </code>
                     </div>
                   )}
-                  <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '4px' }}>
-                    Render Status: <span style={{ color: '#38BDF8', fontWeight: 600 }}>{selectedItem.details?.render_status || (selectedItem as any).render_status || 'NOT_STARTED'}</span>
+                  <div>
+                    Render Status:{' '}
+                    <span style={{ fontWeight: 600 }}>
+                      {selectedItem.details?.render_status || (selectedItem as any).render_status || 'NOT_STARTED'}
+                    </span>
                   </div>
                 </div>
 
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#94A3B8', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--admin-text-secondary)', marginBottom: '6px' }}>
                     Synthesized Video Script:
                   </div>
                   <div
                     style={{
-                      padding: '16px',
-                      borderRadius: '8px',
-                      backgroundColor: '#0F172A',
-                      border: '1px solid #334155',
+                      padding: '14px 16px',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: 'var(--admin-bg)',
+                      border: '1px solid var(--admin-border)',
                       fontSize: '13px',
                       lineHeight: '22px',
-                      color: '#E2E8F0',
+                      color: 'var(--admin-text)',
                       whiteSpace: 'pre-wrap',
                       maxHeight: '240px',
                       overflowY: 'auto',
@@ -372,8 +338,8 @@ export const AdminReview: React.FC = () => {
 
             {/* Quiz specific inspection */}
             {selectedItem.type === 'quiz' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#94A3B8' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--admin-text-secondary)' }}>
                   Generated Questions ({selectedItem.details?.questions?.length || (selectedItem as any).questions?.length || 0}):
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '360px', overflowY: 'auto' }}>
@@ -382,15 +348,15 @@ export const AdminReview: React.FC = () => {
                       key={idx}
                       style={{
                         padding: '14px',
-                        borderRadius: '8px',
-                        backgroundColor: '#0F172A',
-                        border: '1px solid #334155',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: 'var(--admin-bg)',
+                        border: '1px solid var(--admin-border)',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '8px',
                       }}
                     >
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#F8FAFC' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--admin-text)' }}>
                         {idx + 1}. {q.question_text || q.stem}
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -402,20 +368,29 @@ export const AdminReview: React.FC = () => {
                               style={{
                                 fontSize: '12px',
                                 padding: '6px 10px',
-                                borderRadius: '4px',
-                                backgroundColor: isCorrect ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
-                                color: isCorrect ? '#34D399' : '#CBD5E1',
-                                border: isCorrect ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid transparent',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: isCorrect ? 'var(--admin-success-soft)' : 'transparent',
+                                color: isCorrect ? 'var(--admin-success)' : 'var(--admin-text)',
+                                border: isCorrect ? '1px solid #BBF7D0' : '1px solid var(--admin-border)',
                                 fontWeight: isCorrect ? 600 : 400,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
                               }}
                             >
-                              {String.fromCharCode(65 + optIdx)}) {typeof opt === 'object' && opt !== null ? (opt as any).text : opt} {isCorrect && '✓ [Correct Answer]'}
+                              {String.fromCharCode(65 + optIdx)}) {typeof opt === 'object' && opt !== null ? (opt as any).text : opt}
+                              {isCorrect && (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <Check size={12} strokeWidth={3} />
+                                  [Correct Answer]
+                                </span>
+                              )}
                             </div>
                           );
                         })}
                       </div>
                       {q.explanation && (
-                        <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
                           Rationale: {q.explanation}
                         </div>
                       )}
@@ -424,132 +399,56 @@ export const AdminReview: React.FC = () => {
                 </div>
               </div>
             )}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-              <button
-                onClick={() => setInspectModalOpen(false)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '6px',
-                  backgroundColor: 'transparent',
-                  border: '1px solid #334155',
-                  color: '#CBD5E1',
-                  cursor: 'pointer',
-                }}
-              >
-                Close
-              </button>
-              {selectedItem.status !== 'published' && (
-                <button
-                  onClick={() => openApprovalModal(selectedItem)}
-                  style={{
-                    padding: '8px 18px',
-                    borderRadius: '6px',
-                    backgroundColor: 'var(--admin-primary)',
-                    color: '#FFF',
-                    border: 'none',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Proceed to Approval
-                </button>
-              )}
-            </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Approval Gate Modal */}
-      {approvalModalOpen && selectedItem && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1100,
-            padding: '24px',
-          }}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: '520px',
-              backgroundColor: '#1E293B',
-              borderRadius: '12px',
-              border: '1px solid #334155',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
-            }}
-          >
-            <div>
-              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#F8FAFC' }}>
-                Confirm Approval & Publish
-              </h2>
-              <p style={{ fontSize: '13px', color: '#94A3B8', marginTop: '6px' }}>
-                You are about to approve <strong>{selectedItem.title}</strong> ({selectedItem.type}) for topic "{selectedItem.topic_title}". This will publish the content to the Learning Portal.
-              </p>
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '13px', color: '#94A3B8', marginBottom: '6px' }}>
-                Review Notes / Verification Remarks (Optional)
-              </label>
-              <textarea
-                value={approvalNotes}
-                onChange={(e) => setApprovalNotes(e.target.value)}
-                placeholder="e.g. Quality and accuracy verified. Aligned with learning objectives."
-                rows={3}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  backgroundColor: '#0F172A',
-                  border: '1px solid #334155',
-                  color: '#F8FAFC',
-                  fontSize: '13px',
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+      {selectedItem && (
+        <Modal
+          open={approvalModalOpen}
+          onClose={() => setApprovalModalOpen(false)}
+          title="Confirm Approval & Publish"
+          maxWidth={520}
+          footer={
+            <>
               <button
+                type="button"
+                className="adm-btn adm-btn-secondary"
                 onClick={() => setApprovalModalOpen(false)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '6px',
-                  backgroundColor: 'transparent',
-                  border: '1px solid #334155',
-                  color: '#CBD5E1',
-                  cursor: 'pointer',
-                }}
               >
                 Cancel
               </button>
               <button
+                type="button"
+                className="adm-btn adm-btn-primary"
                 onClick={handleConfirmApproval}
                 disabled={submitting}
-                style={{
-                  padding: '8px 20px',
-                  borderRadius: '6px',
-                  backgroundColor: '#10B981',
-                  color: '#FFF',
-                  border: 'none',
-                  fontWeight: 600,
-                  fontSize: '13px',
-                  cursor: submitting ? 'not-allowed' : 'pointer',
-                }}
               >
                 {submitting ? 'Publishing...' : 'Confirm Approval & Publish'}
               </button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', lineHeight: '20px' }}>
+              You are about to approve <strong style={{ color: 'var(--admin-text)' }}>{selectedItem.title}</strong> ({selectedItem.type}) for topic "{selectedItem.topic_title}". This will publish the content to the Learning Portal.
+            </p>
+            <div>
+              <label className="adm-label" htmlFor="approval-notes">
+                Review Notes / Verification Remarks (Optional)
+              </label>
+              <textarea
+                id="approval-notes"
+                className="adm-textarea"
+                value={approvalNotes}
+                onChange={(e) => setApprovalNotes(e.target.value)}
+                placeholder="e.g. Quality and accuracy verified. Aligned with learning objectives."
+                rows={3}
+              />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

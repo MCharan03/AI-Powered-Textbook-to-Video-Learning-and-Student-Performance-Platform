@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional, Union
+import os
+import re
 import uuid
 from datetime import datetime, timezone
 
 from ..core.database import get_db
+from ..core.config import settings
 from ..core.storage import get_storage
 from ..core.security import (
     require_roles, get_current_user,
@@ -155,24 +160,30 @@ def get_video(
 
     user_role = user.role.value.lower() if hasattr(user.role, "value") else str(user.role).lower()
 
-    # Access control: Must be published or approved to be visible to students/parents
-    is_published = (video.status.upper() in ["PUBLISHED", "APPROVED"] or video.status.lower() == "published")
+    # Access control: Students/parents can only open PUBLISHED videos through the
+    # detail endpoint. "APPROVED" alone means the plan is approved but has no
+    # rendered media yet — it must not leak metadata to learners. Admins/teachers
+    # retain full visibility for review purposes.
+    is_published = (video.status.upper() == "PUBLISHED" or video.status.lower() == "published")
     if not is_published and user_role not in ["admin", "teacher"]:
         raise HTTPException(status_code=404, detail="Video lesson not yet approved or published")
 
-    # Access control: Student can only access video from assigned subjects
+    # Access control: Student can only access video from assigned subjects.
+    # A student with NO subject assignments has no authorized curriculum and
+    # must not be able to open arbitrary published videos.
     if user_role == "student":
         student = resolve_student_for_user(user, db)
         if student and video.topic and video.topic.chapter:
             subj_id = video.topic.chapter.subject_id
             assigned_count = db.query(StudentSubject).filter(StudentSubject.student_id == student.id).count()
-            if assigned_count > 0:
-                is_assigned = db.query(StudentSubject).filter(
-                    StudentSubject.student_id == student.id,
-                    StudentSubject.subject_id == subj_id
-                ).first()
-                if not is_assigned:
-                    raise HTTPException(status_code=403, detail="Student is not assigned to this subject")
+            if assigned_count == 0:
+                raise HTTPException(status_code=403, detail="Student is not assigned to any subject")
+            is_assigned = db.query(StudentSubject).filter(
+                StudentSubject.student_id == student.id,
+                StudentSubject.subject_id == subj_id
+            ).first()
+            if not is_assigned:
+                raise HTTPException(status_code=403, detail="Student is not assigned to this subject")
 
     if user_role not in ["admin", "teacher"]:
         # Student users must never receive a placeholder video or an unrendered published video
@@ -189,6 +200,27 @@ def get_video(
     playable_url = storage.get_url(effective_key) if effective_key else (video.video_url or "")
 
     rev_str = video.review_status.value if hasattr(video.review_status, "value") else str(video.review_status)
+
+    # Resume state + caption track for the requesting student (admins get None)
+    resume_position: Optional[float] = None
+    watch_pct: Optional[float] = None
+    if user_role == "student":
+        student = resolve_student_for_user(user, db)
+        if student:
+            prog = db.query(StudentVideoProgress).filter(
+                StudentVideoProgress.video_id == video.id,
+                StudentVideoProgress.student_id == student.id
+            ).first()
+            if prog:
+                resume_position = float(prog.last_position_seconds or 0.0)
+                watch_pct = float(prog.watch_percentage or 0.0)
+
+    captions_url = (
+        f"/learn/videos/{video.id}/captions.vtt"
+        if video.captions_storage_key and user_role in ["student", "admin", "teacher"]
+        else None
+    )
+
     return VideoOut(
         id=video.id,
         title=video.title,
@@ -208,7 +240,71 @@ def get_video(
         description=video.description,
         learning_objective=video.learning_objective,
         content_outline=video.content_outline or [],
-        actual_duration_seconds=video.actual_duration_seconds
+        actual_duration_seconds=video.actual_duration_seconds,
+        captions_url=captions_url,
+        resume_position_seconds=resume_position,
+        watch_percentage=watch_pct
+    )
+
+
+# 2c. GET /learn/videos/{id}/captions.vtt (Browser-compatible caption track)
+_SRT_TIMESTAMP_RE = re.compile(r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})")
+
+
+def _srt_to_vtt(srt_content: str) -> str:
+    """Convert SubRip (SRT) caption text to WebVTT, preserving cue timing."""
+    vtt = _SRT_TIMESTAMP_RE.sub(lambda m: f"{int(m.group(1)):02d}:{m.group(2)}:{m.group(3)}.{m.group(4).ljust(3, '0')}", srt_content)
+    if not vtt.lstrip().startswith("WEBVTT"):
+        vtt = "WEBVTT\n\n" + vtt.lstrip("\ufeff")
+    return vtt
+
+
+@router.get("/videos/{id}/captions.vtt")
+def get_video_captions(
+    id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    video = db.get(Video, id)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video lesson not found")
+
+    user_role = user.role.value.lower() if hasattr(user.role, "value") else str(user.role).lower()
+    is_published = (video.status.upper() == "PUBLISHED" or video.status.lower() == "published")
+    if not is_published and user_role not in ["admin", "teacher"]:
+        raise HTTPException(status_code=404, detail="Video lesson not yet approved or published")
+
+    # Same subject-assignment isolation as the video detail endpoint
+    if user_role == "student":
+        student = resolve_student_for_user(user, db)
+        if student and video.topic and video.topic.chapter:
+            assigned_count = db.query(StudentSubject).filter(StudentSubject.student_id == student.id).count()
+            if assigned_count == 0:
+                raise HTTPException(status_code=403, detail="Student is not assigned to any subject")
+            is_assigned = db.query(StudentSubject).filter(
+                StudentSubject.student_id == student.id,
+                StudentSubject.subject_id == video.topic.chapter.subject_id
+            ).first()
+            if not is_assigned:
+                raise HTTPException(status_code=403, detail="Student is not assigned to this subject")
+
+    captions_key = video.captions_storage_key
+    if not captions_key:
+        raise HTTPException(status_code=404, detail="No captions available for this video")
+
+    storage = get_storage()
+    local_path = storage.get_local_path(captions_key)
+    if not local_path or not os.path.exists(local_path):
+        raise HTTPException(status_code=404, detail="Captions file not available")
+
+    with open(local_path, "r", encoding="utf-8", errors="replace") as f:
+        srt_text = f.read()
+
+    vtt_text = _srt_to_vtt(srt_text)
+    return Response(
+        content=vtt_text,
+        media_type="text/vtt",
+        headers={"Content-Disposition": f'inline; filename="video_{id}.vtt"'}
     )
 
 
@@ -297,18 +393,15 @@ def record_video_progress(
     if not video:
         raise HTTPException(status_code=404, detail="Video lesson not found")
 
-    # Resolve student
+    # Resolve student — progress MUST be attributed to the caller's own student
+    # record. Admins have no student profile, so their progress writes would
+    # otherwise be misattributed to an arbitrary student (data-integrity bug).
     student = resolve_student_for_user(user, db)
     if not student:
-        # If admin without student record, find or create dummy student profile for test execution
-        first_stu = db.query(Student).first()
-        if first_stu:
-            student = first_stu
-        else:
-            student = Student(user_id=user.id, student_id=f"ADM-STU-{user.id}", name=user.display_name)
-            db.add(student)
-            db.commit()
-            db.refresh(student)
+        raise HTTPException(
+            status_code=403,
+            detail="Video progress can only be recorded for student users"
+        )
 
     vp = db.query(StudentVideoProgress).filter(
         StudentVideoProgress.video_id == id,
@@ -318,37 +411,107 @@ def record_video_progress(
     pct = progress_in.watch_percentage if progress_in.watch_percentage is not None else progress_in.progress_pct
     if pct is None:
         pct = 0.0
+    pct = max(0.0, min(100.0, pct))
 
-    pos_sec = progress_in.last_position_seconds if progress_in.last_position_seconds is not None else 0.0
+    pos_sec = max(0.0, progress_in.last_position_seconds) if progress_in.last_position_seconds is not None else 0.0
+
+    prev_pct = float(vp.watch_percentage or 0.0) if vp else 0.0
+    prev_watched = float(vp.watched_seconds or 0.0) if vp else 0.0
+
+    completion_threshold = float(settings.video_completion_watch_threshold)
+    video_duration = float(video.actual_duration_seconds or video.duration_seconds or 0.0)
+
+    # ------------------------------------------------------------------
+    # Watch-coverage derivation. When the client reports accumulated real
+    # watch time (excluding pauses and seeks), the server derives the
+    # coverage percentage itself — a claimed percentage is not accepted as
+    # proof of watching. Legacy percentage-only payloads remain compatible.
+    # ------------------------------------------------------------------
+    watched_sec = progress_in.watched_seconds
+    effective_watched = prev_watched
+    if watched_sec is not None:
+        watched_sec = max(0.0, watched_sec)
+        effective_watched = max(prev_watched, watched_sec)
+        if video_duration > 0:
+            derived_pct = min(100.0, (effective_watched / video_duration) * 100.0)
+        else:
+            # Duration unknown: coverage cannot be derived; trust the reported
+            # percentage but never regress it.
+            derived_pct = max(prev_pct, pct)
+        new_pct = max(prev_pct, derived_pct)
+        coverage_pct = derived_pct
+    else:
+        new_pct = max(prev_pct, pct)
+        coverage_pct = new_pct
 
     if not vp:
         vp = StudentVideoProgress(
             video_id=id,
             student_id=student.id,
-            watch_percentage=max(0.0, min(100.0, pct)),
-            last_position_seconds=max(0.0, pos_sec),
+            watch_percentage=new_pct,
+            last_position_seconds=pos_sec,
+            watched_seconds=effective_watched if watched_sec is not None else 0.0,
             started_at=datetime.now(timezone.utc)
         )
         db.add(vp)
     else:
-        vp.watch_percentage = max(0.0, min(100.0, pct))
-        vp.last_position_seconds = max(0.0, pos_sec)
+        # Monotonic watch progress: re-watching or seeking backward must never
+        # reduce the recorded completion percentage.
+        vp.watch_percentage = new_pct
+        vp.last_position_seconds = pos_sec
+        if watched_sec is not None:
+            vp.watched_seconds = effective_watched
 
-    if progress_in.completed is not None:
-        vp.completed = progress_in.completed
-    elif vp.watch_percentage >= 95.0:
+    # Server-side completion validation. An explicit completed=True from the
+    # client is only honored when the DERIVED watch coverage meets the
+    # completion threshold — seeking straight to the end cannot mark a video
+    # as watched. Reaching the threshold auto-completes regardless of the
+    # client flag.
+    if coverage_pct >= completion_threshold:
         vp.completed = True
+    elif progress_in.completed is True:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Video cannot be marked completed: only {coverage_pct:.0f}% watched "
+                f"({completion_threshold:.0f}% of the video must be watched)"
+            )
+        )
+    elif progress_in.completed is False:
+        vp.completed = False
 
     if vp.completed and not vp.completed_at:
         vp.completed_at = datetime.now(timezone.utc)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Unique constraint on (student_id, video_id) guards against duplicate
+        # progress records created by concurrent syncs — collapse to a single
+        # authoritative row instead of failing.
+        db.rollback()
+        existing = db.query(StudentVideoProgress).filter(
+            StudentVideoProgress.video_id == id,
+            StudentVideoProgress.student_id == student.id
+        ).first()
+        if existing is None:
+            raise
+        vp = existing
+        vp.watch_percentage = max(float(vp.watch_percentage or 0.0), new_pct)
+        vp.last_position_seconds = pos_sec
+        if watched_sec is not None:
+            vp.watched_seconds = max(float(vp.watched_seconds or 0.0), effective_watched)
+        if coverage_pct >= completion_threshold:
+            vp.completed = True
+        db.commit()
+
     db.refresh(vp)
     return ProgressOut(
         video_id=vp.video_id,
         user_id=student.user_id,
         progress_pct=vp.watch_percentage,
         last_position_seconds=vp.last_position_seconds,
+        watched_seconds=float(vp.watched_seconds or 0.0),
         completed=vp.completed
     )
 
@@ -367,6 +530,7 @@ def serialize_student_quiz(quiz: Quiz) -> QuizOut:
             question_text=q.question_text,
             options=q.options or [],
             objective=q.objective,
+            explanation=q.explanation,
             adaptive=q.adaptive or False,
             weak_concept=q.weak_concept,
             question_type=q.question_type or "MCQ",
@@ -492,11 +656,16 @@ def get_adaptive_quiz(
     student = resolve_student_for_user(user, db)
     stu_id = student.id if student else None
 
-    # Find recent attempts for this student with weak concepts
-    attempts_query = db.query(QuizAttempt)
+    # Data isolation: without a student record (e.g. an admin caller) this
+    # endpoint must NOT aggregate weak concepts from other users' attempts.
+    attempts: List[QuizAttempt] = []
     if stu_id:
-        attempts_query = attempts_query.filter(QuizAttempt.student_id == stu_id)
-    attempts = attempts_query.order_by(QuizAttempt.submitted_at.desc()).all()
+        attempts = (
+            db.query(QuizAttempt)
+            .filter(QuizAttempt.student_id == stu_id)
+            .order_by(QuizAttempt.submitted_at.desc())
+            .all()
+        )
 
     all_weak_concepts = []
     for a in attempts:
@@ -1284,7 +1453,7 @@ def _build_parent_child_progress(student: Student, db: Session) -> ParentChildPr
         rec = v_progress_map.get(v.id)
         if rec and rec.completed:
             v_status = "COMPLETED"
-        elif rec and (rec.progress_percentage > 0 or (rec.watch_time_seconds and rec.watch_time_seconds > 0)):
+        elif rec and ((rec.watch_percentage or 0) > 0 or (rec.last_position_seconds or 0) > 0):
             v_status = "IN_PROGRESS"
         else:
             v_status = "NOT_STARTED"
@@ -1421,7 +1590,7 @@ def _build_parent_child_progress(student: Student, db: Session) -> ParentChildPr
     for p in v_progress_map.values():
         if not p.video:
             continue
-        ts = p.updated_at or p.last_watched_at or p.created_at or datetime.now(timezone.utc)
+        ts = p.updated_at or p.created_at or datetime.now(timezone.utc)
         if p.completed:
             recent_activity.append(ParentActivityItem(
                 id=f"video-{p.id}",
@@ -1430,7 +1599,7 @@ def _build_parent_child_progress(student: Student, db: Session) -> ParentChildPr
                 timestamp=ts,
                 status="COMPLETED"
             ))
-        elif p.progress_percentage > 0 or (p.watch_time_seconds and p.watch_time_seconds > 0):
+        elif (p.watch_percentage or 0) > 0 or (p.last_position_seconds or 0) > 0:
             recent_activity.append(ParentActivityItem(
                 id=f"video-{p.id}",
                 type="video",

@@ -66,7 +66,19 @@ import {
   ParentAssignmentSummary,
 } from './types';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = (import.meta.env?.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || 'http://localhost:8000';
+
+/**
+ * Resolve a relative API media path (e.g. "/learn/videos/42/captions.vtt" or a
+ * storage key like "videos/42/video_42_v1.mp4") into an absolute URL against
+ * the API origin. Media must always load from the API, never the frontend origin.
+ */
+export function mediaUrl(path?: string | null): string {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  const joined = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE}${joined}`;
+}
 
 class ApiClient {
   private token: string | null = null;
@@ -484,6 +496,9 @@ class ApiClient {
       learning_objective: raw.learning_objective,
       content_outline: raw.content_outline,
       actual_duration_seconds: raw.actual_duration_seconds,
+      captions_url: raw.captions_url || null,
+      resume_position_seconds: raw.resume_position_seconds ?? null,
+      watch_percentage: raw.watch_percentage ?? null,
     };
   }
 
@@ -491,10 +506,23 @@ class ApiClient {
     return this.request<VideoPlan[]>(`/learn/topics/${topicId}/videos`);
   }
 
-  async updateVideoProgress(videoId: number, progressPct: number, completed: boolean): Promise<{ message: string; completed: boolean }> {
+  /**
+   * Sync video playback progress. `watchedSeconds` is the accumulated seconds
+   * of REAL playback (excludes paused time and seeks) — the server derives
+   * completion coverage from it against the video duration, so seeking to the
+   * end cannot count as watching. `lastPositionSeconds` tracks the playhead.
+   */
+  async updateVideoProgress(
+    videoId: number,
+    payload: {
+      watched_seconds: number;
+      last_position_seconds: number;
+      completed: boolean;
+    }
+  ): Promise<{ completed: boolean; progress_pct: number; watched_seconds: number }> {
     return this.request(`/learn/videos/${videoId}/progress`, {
       method: 'POST',
-      body: JSON.stringify({ progress_pct: progressPct, completed }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -509,7 +537,7 @@ class ApiClient {
         id: q.id,
         question_text: q.stem || q.question_text,
         options: q.options || [],
-        explanation: q.objective,
+        explanation: q.explanation ?? null,
       })),
     };
   }
@@ -525,7 +553,7 @@ class ApiClient {
         id: q.id,
         question_text: q.stem || q.question_text,
         options: q.options || [],
-        explanation: q.objective,
+        explanation: q.explanation ?? null,
       })),
     };
   }
@@ -556,7 +584,31 @@ class ApiClient {
         id: q.id,
         question_text: q.stem || q.question_text,
         options: q.options || [],
-        explanation: q.objective,
+        explanation: q.explanation ?? null,
+      })),
+    };
+  }
+
+  /**
+   * PHASE 3B: Create a PERSISTED adaptive remediation quiz for the topic via
+   * POST /learn/topics/{id}/adaptive-quiz, then take it with the standard
+   * submit contract (POST /learn/quizzes/{id}/submit). This replaces the
+   * old read-only preview flow where "Complete Remediation" was never graded.
+   */
+  async startAdaptiveQuiz(topicId: number): Promise<TopicQuiz> {
+    const raw = await this.request<any>(`/learn/topics/${topicId}/adaptive-quiz`, {
+      method: 'POST',
+    });
+    return {
+      id: raw.id,
+      topic_id: raw.topic_id,
+      title: raw.title,
+      review_status: raw.review_status || 'published',
+      questions: (raw.questions || []).map((q: any) => ({
+        id: q.id,
+        question_text: q.stem || q.question_text,
+        options: q.options || [],
+        explanation: q.explanation ?? null,
       })),
     };
   }

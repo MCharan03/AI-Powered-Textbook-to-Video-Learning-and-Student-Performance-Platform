@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     video_target_seconds: int = 330      # 5.5 minutes
     narration_words_per_minute: int = 140 # Educational spoken pacing (130-150 wpm)
 
+    # Build 09+: Student video progress rules.
+    # A video may ONLY be marked completed server-side once this percentage of
+    # the video has genuinely been watched (client-reported watch coverage).
+    # Seeking directly to the end does NOT satisfy this rule by itself.
+    video_completion_watch_threshold: float = 95.0
+
     # Build 06 & 08.4.2: TTS & Video Rendering Parameters
     tts_provider: str = "neural"        # "elevenlabs", "neural", "local", "deterministic"
     tts_engine: str = "neural"          # "elevenlabs", "neural", "local", "deterministic"

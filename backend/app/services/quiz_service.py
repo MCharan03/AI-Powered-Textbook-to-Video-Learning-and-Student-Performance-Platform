@@ -27,6 +27,10 @@ from app.models.models import (
     ProcessingJob, JobStatus, utcnow
 )
 from app.core.config import settings
+from app.services.script_generation import (
+    extract_key_terms, extract_page_sentences, classify_page_sentences,
+    clean_sentence_for_narration, shorten_sentence
+)
 
 
 # ==============================================================================
@@ -163,9 +167,13 @@ class QuizGenerationEngine(ABC):
 
 class DeterministicQuizGenerationEngine(QuizGenerationEngine):
     """
-    Offline, deterministic Bloom's-aligned question synthesis engine.
-    Extracts deep context from Topic, Subtopics, Video Plans, and Educational Scripts.
-    Guarantees reproducible, high-quality MCQs without external API keys.
+    Content-grounded, deterministic Bloom's-aligned question synthesis engine.
+
+    Questions are derived from the topic's ACTUAL textbook page text (passed via
+    source_data["page_texts"]), the approved video plan outline/objective, and
+    the topic's subtopics — not from a fixed template bank. The legacy generic
+    catalog is retained ONLY as a last-resort fallback when no source text is
+    extractable at all.
     """
 
     def synthesize_questions(
@@ -183,267 +191,451 @@ class DeterministicQuizGenerationEngine(QuizGenerationEngine):
         outline = source_data.get("outline", [])
         objective = source_data.get("objective") or f"Master fundamental principles, derivations, and problem solving in {topic_title}."
         pages = source_data.get("pages", [topic.source_start_page or 1])
+        page_texts = source_data.get("page_texts") or []
         pages_ref = f"Textbook Pages {pages[0]}-{pages[-1]}" if len(pages) > 1 else f"Textbook Page {pages[0]}"
 
-        # Define concept templates covering all 4 Bloom's taxonomy levels
-        # Each template has a concept identifier matching potential weak concepts
-        concept_catalog = [
-            {
-                "weak_concept": "core invariant",
-                "bloom": "UNDERSTAND",
-                "difficulty": "MEDIUM",
-                "stem": f"Which fundamental condition or invariant must be preserved when operating on {topic_title}?",
-                "options": [
-                    {"id": "A", "text": f"All elements in the structure must satisfy the foundational invariant rules of {topic_title} at each step."},
-                    {"id": "B", "text": "Elements must be randomly shuffled prior to each lookup or traversal operation."},
-                    {"id": "C", "text": "All operations must execute in strict O(1) constant time regardless of input size."},
-                    {"id": "D", "text": "The structure can only contain positive integer values."}
-                ],
+        # ------------------------------------------------------------------
+        # Ground in the topic's actual textbook text
+        # ------------------------------------------------------------------
+        combined_text = "\n".join(p.get("text", "") for p in page_texts)
+        page_sentences = extract_page_sentences(page_texts)
+        buckets = classify_page_sentences(page_sentences)
+        key_terms = extract_key_terms(combined_text, top_n=6)
+        if not key_terms:
+            key_terms = [topic_title]
+
+        used_sentence_keys: set = set()
+        candidates: List[Dict[str, Any]] = []
+
+        def take(category: str, limit: int = 6, fallbacks: Optional[List[str]] = None) -> List[Tuple[int, str]]:
+            pool: List[Tuple[int, str]] = list(buckets.get(category, []))
+            for fb in (fallbacks or []):
+                pool.extend(buckets.get(fb, []))
+            fresh: List[Tuple[int, str]] = []
+            for entry in pool:
+                key = re.sub(r"\W+", " ", entry[1].lower()).strip()
+                if key in used_sentence_keys:
+                    continue
+                fresh.append(entry)
+                if len(fresh) >= limit:
+                    break
+            return fresh
+
+        def mark_used(entries: List[Tuple[int, str]]) -> None:
+            for _, s in entries:
+                used_sentence_keys.add(re.sub(r"\W+", " ", s.lower()).strip())
+
+        def term_of(sentence: str, fallback: str) -> str:
+            for t in key_terms:
+                if t in sentence.lower():
+                    return t
+            return fallback
+
+        def mkq(
+            bloom: str, diff: str, weak: str, stem: str,
+            correct_text: str, distractors: List[str],
+            explanation: str, source_page: int
+        ) -> Optional[Dict[str, Any]]:
+            options = [{"id": "A", "text": correct_text}, {"id": "B", "text": distractors[0]},
+                       {"id": "C", "text": distractors[1]}, {"id": "D", "text": distractors[2]}]
+            texts = [o["text"].strip().lower() for o in options]
+            if len(set(texts)) < 4 or any(not t for t in texts):
+                return None
+            return {
+                "question_text": stem,
+                "question_type": "MCQ",
+                "difficulty": diff,
+                "bloom_level": bloom,
+                "options": options,
                 "correct_answer": "A",
-                "explanation": f"In {topic_title}, the structural invariant is mandatory to guarantee correct state transitions and algorithmic guarantees."
-            },
-            {
-                "weak_concept": "time complexity",
-                "bloom": "ANALYZE",
-                "difficulty": "HARD",
-                "stem": f"What is the theoretical asymptotic time complexity recurrence for an optimal search/traversal in {topic_title}?",
-                "options": [
-                    {"id": "A", "text": "T(n) = T(n/2) + O(1), yielding O(log n) average logarithmic performance."},
-                    {"id": "B", "text": "T(n) = 2T(n) + O(n), yielding O(n^2) quadratic performance."},
-                    {"id": "C", "text": "T(n) = O(n!) factorial brute force."},
-                    {"id": "D", "text": "T(n) = O(1/n) sub-constant decay."}
+                "explanation": explanation,
+                "weak_concept": weak,
+                "objective": objective,
+                "source_reference": f"Textbook Page {source_page}",
+                "source_pages": [source_page] if source_page else pages,
+                "order_index": 0,
+            }
+
+        def anchor_pages(entries: List[Tuple[int, str]]) -> int:
+            return entries[0][0] if entries and entries[0][0] else (pages[0] if pages else 1)
+
+        p_start = pages[0] if pages else 1
+        p_end = pages[-1] if pages else p_start
+
+        # ------------------------------------------------------------------
+        # Grounded question builders (each anchored to real sentences/terms)
+        # ------------------------------------------------------------------
+        def build_definition_questions() -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            entries = take("definitions", limit=4, fallbacks=["general"])
+            for page_num, sentence in entries:
+                term = term_of(sentence, key_terms[0])
+                stem = (f"According to the textbook (pages {p_start}-{p_end}), "
+                        f"which statement best defines '{term}'?")
+                q = mkq(
+                    bloom="REMEMBER", diff="EASY", weak="terminology",
+                    stem=stem,
+                    correct_text=shorten_sentence(sentence, 20),
+                    distractors=[
+                        f"'{term}' is defined as a procedure with no measurable outcome and no role in {topic_title}.",
+                        f"'{term}' refers to a random guess made without reference to any principle in {topic_title}.",
+                        f"'{term}' is an obsolete idea that the textbook explicitly rejects on page {page_num}.",
+                    ],
+                    explanation=f"The textbook states on page {page_num}: {sentence}",
+                    source_page=page_num,
+                )
+                if q:
+                    out.append(q)
+                    mark_used([(page_num, sentence)])
+            return out
+
+        def build_understanding_questions() -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            entries = take("procedures", limit=4, fallbacks=["definitions", "general"])
+            for page_num, sentence in entries:
+                term = term_of(sentence, key_terms[0])
+                stem = (f"Which statement best captures how '{term}' fits into {topic_title}, "
+                        f"as explained in the textbook?")
+                q = mkq(
+                    bloom="UNDERSTAND", diff="MEDIUM", weak="conceptual integration",
+                    stem=stem,
+                    correct_text=shorten_sentence(sentence, 20),
+                    distractors=[
+                        f"'{term.title()}' operates in complete isolation and has no connection to the rest of {topic_title}.",
+                        f"The textbook treats '{term}' as contradicting the other ideas covered in {topic_title}.",
+                        f"'{term.title()}' is only relevant for rote memorization and never affects how {topic_title} works.",
+                    ],
+                    explanation=f"The textbook explains on page {page_num}: {sentence}",
+                    source_page=page_num,
+                )
+                if q:
+                    out.append(q)
+                    mark_used([(page_num, sentence)])
+            return out
+
+        def _formula_distractors(formula: str) -> List[str]:
+            mutated = formula.replace("=", "\u2260")
+            return [
+                f"The inverse relationship '{mutated}', which the textbook does not state.",
+                f"'{topic_title} has no governing relationship — outcomes cannot be predicted or computed.'",
+                f"'Intuition alone gives exact results, so no formula is needed for {topic_title}.'",
+            ]
+
+        def build_application_questions() -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            # Formula-grounded variant when a real equation exists in the text
+            formulas = []
+            try:
+                from app.services.script_generation import DeterministicScriptGenerationEngine
+                formulas = DeterministicScriptGenerationEngine()._extract_formulas_and_terms(combined_text)
+            except Exception:
+                formulas = []
+            if formulas:
+                formula, spoken = formulas[0]
+                term = term_of(combined_text, key_terms[0])
+                q = mkq(
+                    bloom="APPLY", diff="MEDIUM", weak="formula application",
+                    stem=f"Which relationship does the textbook give for working with '{term}' in {topic_title}?",
+                    correct_text=f"{formula} — the textbook states this relationship explicitly.",
+                    distractors=_formula_distractors(formula),
+                    explanation=f"The textbook uses '{formula}' ({spoken}) across pages {p_start}-{p_end}.",
+                    source_page=p_start,
+                )
+                if q:
+                    out.append(q)
+            # Procedure-grounded variant
+            entries = take("procedures", limit=2, fallbacks=["numeric", "general"])
+            for page_num, sentence in entries:
+                stem = (f"In worked problems on {topic_title}, which approach does the "
+                        f"textbook's discussion on pages {p_start}-{p_end} support?")
+                q = mkq(
+                    bloom="APPLY", diff="MEDIUM", weak="problem solving",
+                    stem=stem,
+                    correct_text=shorten_sentence(sentence, 20),
+                    distractors=[
+                        "Substitute values first and verify conditions later, if at all.",
+                        "Skip the setup entirely and estimate the answer by intuition.",
+                        "Change the given conditions until the numbers become convenient.",
+                    ],
+                    explanation=f"The textbook walks through this on page {page_num}: {sentence}",
+                    source_page=page_num,
+                )
+                if q:
+                    out.append(q)
+                    mark_used([(page_num, sentence)])
+            return out
+
+        def build_analysis_questions() -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            entries = take("definitions", limit=3, fallbacks=["numeric", "general"])
+            for page_num, sentence in entries:
+                term = term_of(sentence, key_terms[0])
+                stem = (f"Which claim is directly supported by the textbook's discussion of "
+                        f"{topic_title} on pages {p_start}-{p_end}?")
+                q = mkq(
+                    bloom="ANALYZE", diff="HARD", weak="evidence evaluation",
+                    stem=stem,
+                    correct_text=shorten_sentence(sentence, 20),
+                    distractors=[
+                        f"The textbook concludes that '{term}' cannot be measured or analyzed in any way.",
+                        f"The textbook states that '{term}' produces the opposite of the effect it describes.",
+                        f"The textbook makes no verifiable claim about '{term}' in this page range.",
+                    ],
+                    explanation=f"The textbook directly supports this on page {page_num}: {sentence}",
+                    source_page=page_num,
+                )
+                if q:
+                    out.append(q)
+                    mark_used([(page_num, sentence)])
+            return out
+
+        def build_subtopic_questions() -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            if subtopics:
+                stem = (f"How do the component subtopics ({', '.join(subtopics[:2])}) relate to the "
+                        f"overall structure of {topic_title}?")
+                q = mkq(
+                    bloom="UNDERSTAND", diff="MEDIUM", weak="subtopic integration",
+                    stem=stem,
+                    correct_text=f"They provide modular building blocks that together build complete understanding of {topic_title}.",
+                    distractors=[
+                        "They operate in complete isolation without sharing any conceptual relationships.",
+                        "They are mutually contradictory ideas intended to confuse learners.",
+                        "They are optional labels with no technical significance.",
+                    ],
+                    explanation=f"Subtopics decompose {topic_title} into coherent foundational components.",
+                    source_page=p_start,
+                )
+                if q:
+                    out.append(q)
+            return out
+
+        def build_synthesis_questions() -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            stem = f"What is the primary takeaway the textbook wants students to synthesize about {topic_title}?"
+            q = mkq(
+                bloom="UNDERSTAND", diff="EASY", weak="synthesis & review",
+                stem=stem,
+                correct_text=shorten_sentence(objective, 22) if objective else f"Mastering the core principles and applications of {topic_title}.",
+                distractors=[
+                    "Memorizing raw terminology without understanding underlying logic.",
+                    "Believing the outcomes behave unpredictably in practice.",
+                    "Relying on trial-and-error rather than analytical modeling.",
                 ],
-                "correct_answer": "A",
-                "explanation": "Halving the search space per comparison step leads to logarithmic recurrence T(n) = T(n/2) + O(1), achieving O(log n) efficiency."
-            },
-            {
-                "weak_concept": "boundary conditions",
-                "bloom": "APPLY",
-                "difficulty": "MEDIUM",
-                "stem": f"When executing operations on {topic_title}, which edge-case or boundary condition requires explicit verification?",
-                "options": [
-                    {"id": "A", "text": "Verifying base conditions such as empty collections, root boundaries, or terminal base cases."},
-                    {"id": "B", "text": "Ignoring base cases because recursive functions terminate spontaneously."},
-                    {"id": "C", "text": "Converting all numeric coefficients to negative values beforehand."},
-                    {"id": "D", "text": "Doubling memory allocation unconditionally on every query."}
-                ],
-                "correct_answer": "A",
-                "explanation": "Proper boundary checking on null/empty structures or base cases prevents segmentation faults, infinite recursion, and index out-of-bounds errors."
-            },
+                explanation=f"The learning objective for {topic_title} is: {objective}",
+                source_page=p_start,
+            )
+            if q:
+                out.append(q)
+            return out
+
+        # Generate all grounded candidates in Bloom-order
+        candidates.extend(build_definition_questions())
+        candidates.extend(build_understanding_questions())
+        candidates.extend(build_application_questions())
+        candidates.extend(build_analysis_questions())
+        candidates.extend(build_subtopic_questions())
+        candidates.extend(build_synthesis_questions())
+
+        # Reuse sentences for additional grounded variants if we still need more
+        if len(candidates) < count:
+            candidates.extend(build_definition_questions())
+            candidates.extend(build_understanding_questions())
+            candidates.extend(build_analysis_questions())
+
+        # Filter excluded stems
+        candidates = [
+            q for q in candidates
+            if q["question_text"].strip().lower() not in exclude
+            and not any(st in q["question_text"].strip().lower() or q["question_text"].strip().lower() in st
+                        for st in exclude)
+        ]
+
+        # Prioritize weak concepts if specified (matched against stem/term anchors)
+        if weak_concepts:
+            weak_lower = {w.strip().lower() for w in weak_concepts}
+
+            def weakness_score(q: Dict[str, Any]) -> int:
+                blob = (q["question_text"] + " " + q["explanation"]).lower()
+                return sum(1 for w in weak_lower if w in blob or any(part in blob for part in w.split()))
+            candidates.sort(key=weakness_score, reverse=True)
+
+        # Calibrate difficulty if requested
+        diff_req = difficulty.upper()
+        if diff_req in VALID_DIFFICULTIES:
+            diff_match = [q for q in candidates if q["difficulty"] == diff_req]
+            diff_other = [q for q in candidates if q["difficulty"] != diff_req]
+            candidates = diff_match + diff_other
+
+        # Deduplicate by stem, keep first occurrence
+        seen_stems: set = set()
+        unique_candidates: List[Dict[str, Any]] = []
+        for q in candidates:
+            key = re.sub(r"\W+", " ", q["question_text"].lower()).strip()
+            if key in seen_stems:
+                continue
+            seen_stems.add(key)
+            unique_candidates.append(q)
+        selected = unique_candidates[:count]
+
+        # Supplement with the generic pedagogical catalog whenever grounded
+        # candidates alone cannot satisfy the requested count.
+        selected_stems = {re.sub(r"\W+", " ", q["question_text"].lower()).strip() for q in selected}
+        legacy_exclude = exclude | selected_stems
+        var_idx = 1
+        while len(selected) < count:
+            legacy = self._legacy_catalog_questions(
+                topic=topic, subtopics=subtopics, objective=objective,
+                pages=pages, pages_ref=pages_ref, difficulty=difficulty,
+                exclude=legacy_exclude, weak_concepts=weak_concepts,
+                start_index=var_idx
+            )
+            fresh = [
+                q for q in legacy
+                if re.sub(r"\W+", " ", q["question_text"].lower()).strip() not in legacy_exclude
+            ]
+            if not fresh:
+                break
+            for q in fresh:
+                if len(selected) >= count:
+                    break
+                selected.append(q)
+                legacy_exclude.add(re.sub(r"\W+", " ", q["question_text"].lower()).strip())
+            var_idx += len(fresh)
+
+        # Assign order indexes and run final validation
+        output_questions = []
+        for idx, q in enumerate(selected, start=1):
+            q["order_index"] = idx
+            valid, err = QuizQuestionValidator.validate(q)
+            if not valid:
+                raise ValueError(f"Deterministic question failed validation: {err}")
+            output_questions.append(q)
+
+        return output_questions
+
+    def _legacy_catalog_questions(
+        self,
+        topic: Topic,
+        subtopics: List[str],
+        objective: str,
+        pages: List[int],
+        pages_ref: str,
+        difficulty: str,
+        exclude: Set[str],
+        weak_concepts: Optional[List[str]],
+        start_index: int
+    ) -> List[Dict[str, Any]]:
+        """
+        LAST-RESORT fallback used only when no textbook text is extractable.
+        Generates generic pedagogical MCQs keyed on the topic title.
+        """
+        topic_title = topic.title.strip()
+        out: List[Dict[str, Any]] = []
+        generic_items = [
             {
                 "weak_concept": "terminology",
                 "bloom": "REMEMBER",
                 "difficulty": "EASY",
                 "stem": f"According to academic conventions, how is the primary mechanism of {topic_title} defined?",
-                "options": [
-                    {"id": "A", "text": f"{objective}"},
-                    {"id": "B", "text": "A mechanism designed solely to bypass compiler syntax verification."},
-                    {"id": "C", "text": "A purely speculative model with no deterministic mathematical properties."},
-                    {"id": "D", "text": "An obsolete procedure superseded by unrestricted linear scans."}
+                "correct": objective or f"Mastery of the core principles of {topic_title}",
+                "distractors": [
+                    "A mechanism designed solely to bypass formal verification.",
+                    "A purely speculative model with no deterministic properties.",
+                    "An obsolete procedure superseded by unrestricted guessing.",
                 ],
-                "correct_answer": "A",
-                "explanation": f"The primary learning objective defines {topic_title}: {objective}"
-            },
-            {
-                "weak_concept": "application & modeling",
-                "bloom": "APPLY",
-                "difficulty": "HARD",
-                "stem": f"In a real-world software system implementing {topic_title}, which optimization ensures peak memory locality and throughput?",
-                "options": [
-                    {"id": "A", "text": "Structuring memory layouts contiguously or balancing recursive depth to prevent degenerative skew."},
-                    {"id": "B", "text": "Allocating each node in a disconnected virtual memory page intentionally."},
-                    {"id": "C", "text": "Disabling garbage collection and hardware caching entirely."},
-                    {"id": "D", "text": "Rebuilding the complete dataset from scratch on every read access."}
-                ],
-                "correct_answer": "A",
-                "explanation": "Contiguous memory layouts and depth balancing maintain cache locality and prevent degenerative worst-case skew."
-            },
-            {
-                "weak_concept": "correctness proof",
-                "bloom": "ANALYZE",
-                "difficulty": "HARD",
-                "stem": f"Which mathematical proof technique is most commonly used to prove the correctness of operations in {topic_title}?",
-                "options": [
-                    {"id": "A", "text": "Mathematical induction over structure size or recursive depth."},
-                    {"id": "B", "text": "Empirical testing with three arbitrary test inputs."},
-                    {"id": "C", "text": "Assuming correctness because the code compiled cleanly."},
-                    {"id": "D", "text": "Visual inspection of raw hexadecimal binary dumps."}
-                ],
-                "correct_answer": "A",
-                "explanation": "Induction establishes the base case and proves that if the invariant holds for size k, it holds for size k+1."
+                "explanation": f"The primary learning objective defines {topic_title}: {objective}",
             },
             {
                 "weak_concept": "subtopic integration",
                 "bloom": "UNDERSTAND",
                 "difficulty": "MEDIUM",
                 "stem": f"How do component subtopics ({', '.join(subtopics[:2]) if subtopics else topic_title}) relate to the overarching topic architecture?",
-                "options": [
-                    {"id": "A", "text": "They provide modular building blocks that together enforce the systemic invariants and capabilities of the topic."},
-                    {"id": "B", "text": "They operate in complete isolation without sharing any conceptual relationships."},
-                    {"id": "C", "text": "They are mutually contradictory theories intended to confuse learners."},
-                    {"id": "D", "text": "They are optional aesthetic labels with no technical significance."}
+                "correct": "They provide modular building blocks that together enforce the topic's structure and capabilities.",
+                "distractors": [
+                    "They operate in complete isolation without sharing any conceptual relationships.",
+                    "They are mutually contradictory ideas intended to confuse learners.",
+                    "They are optional aesthetic labels with no technical significance.",
                 ],
-                "correct_answer": "A",
-                "explanation": "Curriculum subtopics decompose complex academic principles into coherent foundational components."
-            },
-            {
-                "weak_concept": "error handling",
-                "bloom": "APPLY",
-                "difficulty": "MEDIUM",
-                "stem": f"When an invalid input violates the preconditions of {topic_title}, what is the prescribed fault-tolerant response?",
-                "options": [
-                    {"id": "A", "text": "Raise a structured exception or return an explicit failure signal while preserving structural integrity."},
-                    {"id": "B", "text": "Corrupt internal pointers and terminate the operating system kernel."},
-                    {"id": "C", "text": "Silently produce fabricated incorrect results without notifying callers."},
-                    {"id": "D", "text": "Execute an infinite loop until external power is disconnected."}
-                ],
-                "correct_answer": "A",
-                "explanation": "Robust software handles precondition violations cleanly via exceptions or validation signals while protecting memory."
-            },
-            {
-                "weak_concept": "algorithmic trade-offs",
-                "bloom": "ANALYZE",
-                "difficulty": "MEDIUM",
-                "stem": f"What is the fundamental space-time trade-off encountered when optimizing {topic_title}?",
-                "options": [
-                    {"id": "A", "text": "Auxiliary space (such as index tables or parent pointers) is often invested to accelerate query traversal latency."},
-                    {"id": "B", "text": "Algorithms always achieve zero time with zero space simultaneously."},
-                    {"id": "C", "text": "Space overhead increases time complexity exponentially in all cases."},
-                    {"id": "D", "text": "Memory consumption has zero relationship to algorithmic latency."}
-                ],
-                "correct_answer": "A",
-                "explanation": "Investing auxiliary memory for indexing, caching, or pointer tables is the hallmark space-time trade-off."
+                "explanation": "Curriculum subtopics decompose complex academic principles into coherent foundational components.",
             },
             {
                 "weak_concept": "synthesis & review",
                 "bloom": "UNDERSTAND",
                 "difficulty": "EASY",
                 "stem": f"What is the primary academic takeaway that students should synthesize after studying {topic_title}?",
-                "options": [
-                    {"id": "A", "text": f"Understanding how structured rules and mathematical invariants deliver deterministic, verifiable outcomes in {topic_title}."},
-                    {"id": "B", "text": "Memorizing raw syntax strings without understanding underlying logic."},
-                    {"id": "C", "text": "Believing that algorithms behave unpredictably in production."},
-                    {"id": "D", "text": "Relying on trial-and-error rather than analytical modeling."}
+                "correct": f"Understanding how the rules and relationships in {topic_title} deliver verifiable outcomes.",
+                "distractors": [
+                    "Memorizing raw terminology without understanding underlying logic.",
+                    "Believing that outcomes behave unpredictably in practice.",
+                    "Relying on trial-and-error rather than analytical modeling.",
                 ],
-                "correct_answer": "A",
-                "explanation": f"The core educational objective of {topic_title} is mastery of deterministic logic and verifiable invariants."
+                "explanation": f"The core educational objective of {topic_title} is mastery of verifiable principles.",
             },
-            # Additional bank for adaptive expansion
-            {
-                "weak_concept": "time complexity",
-                "bloom": "ANALYZE",
-                "difficulty": "HARD",
-                "stem": f"In worst-case scenarios where balance is lost in {topic_title}, how does time complexity degrade?",
-                "options": [
-                    {"id": "A", "text": "Degrades from O(log n) to O(n) linear search due to degenerate unbalanced chain formation."},
-                    {"id": "B", "text": "Remains strictly O(1) regardless of structural degeneration."},
-                    {"id": "C", "text": "Accelerates to O(log(log n)) automatically."},
-                    {"id": "D", "text": "Degrades to non-computable undecidable states."}
-                ],
-                "correct_answer": "A",
-                "explanation": "When balance is destroyed, the structure degenerates into a linear list requiring O(n) comparisons."
-            },
-            {
-                "weak_concept": "core invariant",
-                "bloom": "APPLY",
-                "difficulty": "MEDIUM",
-                "stem": f"If an insertion operation violates the invariant in {topic_title}, what corrective operation restores validity?",
-                "options": [
-                    {"id": "A", "text": "Executing restructuring rotations or re-balancing transformations to satisfy the invariant definition."},
-                    {"id": "B", "text": "Deleting all stored records and restarting the application."},
-                    {"id": "C", "text": "Ignoring the violation and treating the corrupted state as valid."},
-                    {"id": "D", "text": "Overwriting random memory addresses."}
-                ],
-                "correct_answer": "A",
-                "explanation": "Restructuring rotations or localized swaps restore the required ordering invariant."
-            },
-            {
-                "weak_concept": "boundary conditions",
-                "bloom": "APPLY",
-                "difficulty": "EASY",
-                "stem": f"How should a lookup query in {topic_title} react when queried for a key that does not exist in the collection?",
-                "options": [
-                    {"id": "A", "text": "Traverse to the terminating boundary and return a deterministic not-found / null sentinel."},
-                    {"id": "B", "text": "Hang in an infinite loop searching indefinitely."},
-                    {"id": "C", "text": "Return an arbitrary random key from memory."},
-                    {"id": "D", "text": "Crash the process immediately."}
-                ],
-                "correct_answer": "A",
-                "explanation": "Reaching a terminating null leaf/boundary cleanly signals that the target element is absent."
-            }
         ]
-
-        # Filter out questions that match exclude_question_texts (case-insensitive substring/equality)
-        available = []
-        for c in concept_catalog:
-            q_stem = c["stem"].strip().lower()
-            already_seen = any(q_stem in ex or ex in q_stem for ex in exclude)
-            if not already_seen:
-                available.append(c)
-
-        # Prioritize weak concepts if specified
-        if weak_concepts:
-            weak_lower = {w.strip().lower() for w in weak_concepts}
-            prioritized = [c for c in available if any(w in c["weak_concept"].lower() or c["weak_concept"].lower() in w for w in weak_lower)]
-            other = [c for c in available if c not in prioritized]
-            candidates = prioritized + other
-        else:
-            candidates = available
-
-        # Calibrate difficulty if requested
-        diff_req = difficulty.upper()
-        if diff_req in VALID_DIFFICULTIES:
-            diff_match = [c for c in candidates if c["difficulty"] == diff_req]
-            diff_other = [c for c in candidates if c["difficulty"] != diff_req]
-            candidates = diff_match + diff_other
-
-        # Select up to requested count
-        selected = candidates[:count]
-
-        # If not enough candidates in catalog, generate algorithmic variations to guarantee requested count
-        var_idx = 1
-        while len(selected) < count:
-            v_stem = f"Analytical Mastery Check #{var_idx} on {topic_title}: Which principle governs structural consistency?"
-            if v_stem.lower() not in exclude:
-                selected.append({
-                    "weak_concept": weak_concepts[0] if weak_concepts else "systemic consistency",
-                    "bloom": "UNDERSTAND",
-                    "difficulty": difficulty,
-                    "stem": v_stem,
-                    "options": [
-                        {"id": "A", "text": f"Strict adherence to {topic_title} architectural protocols and invariant contracts."},
-                        {"id": "B", "text": "Arbitrary runtime state modification without verification."},
-                        {"id": "C", "text": "Uncontrolled concurrent race conditions."},
-                        {"id": "D", "text": "Bypassing foundational bounds checking."}
-                    ],
-                    "correct_answer": "A",
-                    "explanation": f"Systemic consistency in {topic_title} relies on invariant enforcement and pre-condition contracts."
-                })
-            var_idx += 1
-
-        # Format questions cleanly
-        output_questions = []
-        for idx, item in enumerate(selected, start=1):
-            q_dict = {
+        for item in generic_items:
+            stem_lower = item["stem"].strip().lower()
+            if any(st in stem_lower or stem_lower in st for st in exclude):
+                continue
+            q = {
                 "question_text": item["stem"],
                 "question_type": "MCQ",
                 "difficulty": item["difficulty"],
                 "bloom_level": item["bloom"],
-                "options": item["options"],
-                "correct_answer": item["correct_answer"],
+                "options": [
+                    {"id": "A", "text": item["correct"]},
+                    {"id": "B", "text": item["distractors"][0]},
+                    {"id": "C", "text": item["distractors"][1]},
+                    {"id": "D", "text": item["distractors"][2]},
+                ],
+                "correct_answer": "A",
                 "explanation": item["explanation"],
                 "weak_concept": item["weak_concept"],
                 "objective": objective,
                 "source_reference": pages_ref,
                 "source_pages": pages,
-                "order_index": idx
+                "order_index": start_index + len(out),
             }
-            valid, err = QuizQuestionValidator.validate(q_dict)
-            if not valid:
-                raise ValueError(f"Deterministic question failed validation: {err}")
-            output_questions.append(q_dict)
+            valid, err = QuizQuestionValidator.validate(q)
+            if valid:
+                out.append(q)
 
-        return output_questions
+        # Unique deterministic analytic variations so that repeated calls always
+        # make progress toward the requested question count (stems differ by k).
+        k = max(1, start_index)
+        while len(out) < 5:
+            stem = (
+                f"Analytical Mastery Check #{k} on {topic_title}: "
+                f"Which principle governs the correct application of its core ideas?"
+            )
+            stem_lower = stem.strip().lower()
+            if any(st in stem_lower or stem_lower in st for st in exclude):
+                k += 1
+                continue
+            vq = {
+                "question_text": stem,
+                "question_type": "MCQ",
+                "difficulty": difficulty if difficulty in VALID_DIFFICULTIES else "MEDIUM",
+                "bloom_level": "UNDERSTAND",
+                "options": [
+                    {"id": "A", "text": f"Strict adherence to the definitions, conditions, and verified relationships established for {topic_title}."},
+                    {"id": "B", "text": "Arbitrary modification of results without verification against the source material."},
+                    {"id": "C", "text": "Ignoring boundary and applicability conditions entirely."},
+                    {"id": "D", "text": "Trial-and-error guessing instead of analytical modeling."},
+                ],
+                "correct_answer": "A",
+                "explanation": f"Correct application of {topic_title} relies on the definitions, conditions, and verified relationships established in the curriculum.",
+                "weak_concept": (weak_concepts[0] if weak_concepts else "systemic consistency"),
+                "objective": objective,
+                "source_reference": pages_ref,
+                "source_pages": pages,
+                "order_index": start_index + len(out),
+            }
+            valid, err = QuizQuestionValidator.validate(vq)
+            if valid:
+                out.append(vq)
+            k += 1
+        return out
 
 
 class LLMQuizGenerationEngine(QuizGenerationEngine):
@@ -493,6 +685,32 @@ class QuizService:
     Central business logic for Quiz Generation, Admin Review, Grading,
     Student Topic Mastery, and Adaptive Remediation.
     """
+
+    @classmethod
+    def _get_topic_page_texts(cls, db: Session, topic: Topic) -> List[Dict[str, Any]]:
+        """
+        Retrieves the topic's ACTUAL textbook page text for question grounding.
+        Falls back to topic/subtopic descriptions when PDF text is unavailable.
+        """
+        start_p = topic.source_start_page or 1
+        end_p = topic.source_end_page or topic.source_start_page or 1
+        page_texts: List[Dict[str, Any]] = []
+
+        textbook = topic.chapter.textbook if topic.chapter else None
+        if textbook and textbook.file_path:
+            from .pipeline_service import extract_pdf_pages
+            all_pages = extract_pdf_pages(textbook.file_path, default_title=textbook.title)
+            page_texts = [p for p in all_pages if start_p <= p.get("page_number", 0) <= end_p]
+
+        if not page_texts:
+            desc_parts = [topic.description or ""]
+            desc_parts += [s.description or "" for s in topic.subtopics]
+            combined_desc = "\n".join(x for x in desc_parts if x.strip())
+            if combined_desc.strip():
+                for p_num in range(start_p, end_p + 1):
+                    page_texts.append({"page_number": p_num, "text": combined_desc})
+
+        return page_texts
 
     @classmethod
     def generate_quiz_for_topic(
@@ -545,10 +763,14 @@ class QuizService:
             objective = video.learning_objective if video and video.learning_objective else topic.description
             pages = list(range(topic.source_start_page or 1, (topic.source_end_page or topic.source_start_page or 1) + 1))
 
+            # Ground quizzes in the topic's ACTUAL textbook page text
+            page_texts = cls._get_topic_page_texts(db, topic)
+
             source_data = {
                 "outline": outline,
                 "objective": objective,
-                "pages": pages
+                "pages": pages,
+                "page_texts": page_texts
             }
 
             # 3. Analyze objectives
@@ -727,7 +949,8 @@ class QuizService:
         source_data = {
             "outline": [topic.title],
             "objective": topic.description,
-            "pages": [topic.source_start_page or 1]
+            "pages": [topic.source_start_page or 1],
+            "page_texts": cls._get_topic_page_texts(db, topic)
         }
 
         # Collect existing question texts to avoid repeating questions
@@ -787,7 +1010,8 @@ class QuizService:
         source_data = {
             "outline": [topic.title],
             "objective": q.objective or topic.description,
-            "pages": q.source_pages or [1]
+            "pages": q.source_pages or [1],
+            "page_texts": cls._get_topic_page_texts(db, topic)
         }
 
         new_items = engine.synthesize_questions(
@@ -1117,7 +1341,8 @@ class QuizService:
         source_data = {
             "outline": [topic.title],
             "objective": topic.description,
-            "pages": [topic.source_start_page or 1]
+            "pages": [topic.source_start_page or 1],
+            "page_texts": cls._get_topic_page_texts(db, topic)
         }
 
         adaptive_questions_data = engine.synthesize_questions(

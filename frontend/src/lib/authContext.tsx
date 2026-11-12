@@ -44,7 +44,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user]);
 
   const login = async (identifier: string, pass: string, role?: string) => {
-    setLoading(true);
+    // NOTE: intentionally not toggling the context-level `loading` flag here.
+    // Setting it would unmount the active login screen (MainLayout renders a
+    // full-screen loader while loading), which resets the form and swallows
+    // the error message on failed sign-in attempts. Login pages manage their
+    // own button loading state; a successful login re-renders via setUser().
     try {
       await api.login(identifier, pass, role);
       const currentUser = await api.getCurrentUser();

@@ -26,6 +26,8 @@ import { AdminScriptReview } from './pages/admin/AdminScriptReview';
 import { AdminVideoReview } from './pages/admin/AdminVideoReview';
 import { AdminQuizzes } from './pages/admin/AdminQuizzes';
 import { AdminVideoStudio } from './pages/admin/AdminVideoStudio';
+import { AdminSidebar } from './components/admin/AdminSidebar';
+import { AdminHeader } from './components/admin/AdminHeader';
 
 // Learning views
 import { StudentDashboard } from './pages/learn/StudentDashboard';
@@ -48,7 +50,9 @@ const isCurrentAppAdmin = (): boolean => {
       return true;
     }
     // Environment variable for local dev/build: VITE_APP_PORTAL=admin
-    const metaEnv = (import.meta as any)?.env;
+    // NOTE: `import.meta.env` must be accessed as a direct member expression so
+    // Vite can statically inject the value in both dev and production builds.
+    const metaEnv = (import.meta as any).env;
     if (metaEnv?.VITE_APP_PORTAL === 'admin') {
       return true;
     }
@@ -61,6 +65,14 @@ const MainLayout: React.FC = () => {
   const isAdminPortal = isCurrentAppAdmin();
   const [route, setRoute] = useState<string>('');
   const [routeParams, setRouteParams] = useState<any>({});
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('admin_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
 
   const handleNavigate = (newRoute: string, params?: any) => {
     if (!user) return;
@@ -103,6 +115,17 @@ const MainLayout: React.FC = () => {
     setRoute(resolvedRoute);
   };
 
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      try {
+        localStorage.setItem('admin_sidebar_collapsed', String(!prev));
+      } catch {
+        // ignore
+      }
+      return !prev;
+    });
+  };
+
   useEffect(() => {
     if (user) {
       if (user.role === 'admin') {
@@ -119,7 +142,7 @@ const MainLayout: React.FC = () => {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#090D16', color: '#94A3B8' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC', color: '#64748B', fontSize: '14px' }}>
         Loading platform environment...
       </div>
     );
@@ -136,14 +159,14 @@ const MainLayout: React.FC = () => {
   // Cross-application protection
   if (isAdminPortal && user.role !== 'admin') {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#090A10', color: '#F8FAFC', padding: '24px', textAlign: 'center' }}>
-        <h2 style={{ fontSize: '20px', color: '#EF4444', marginBottom: '8px' }}>Access Denied — Administrator Portal</h2>
-        <p style={{ color: '#94A3B8', maxWidth: '440px', lineHeight: 1.5, marginBottom: '20px' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC', color: '#0F172A', padding: '24px', textAlign: 'center' }}>
+        <h2 style={{ fontSize: '20px', color: '#DC2626', marginBottom: '8px' }}>Access Denied — Administrator Portal</h2>
+        <p style={{ color: '#64748B', maxWidth: '440px', lineHeight: 1.5, marginBottom: '20px' }}>
           This portal is strictly restricted to institutional administrators. Student, Parent, and Teacher accounts belong on <strong>learn.veyoralabs.net</strong>.
         </p>
         <button
           onClick={logout}
-          style={{ padding: '10px 18px', backgroundColor: '#334155', color: '#FFF', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+          style={{ padding: '10px 18px', backgroundColor: '#2563EB', color: '#FFF', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
         >
           Sign Out
         </button>
@@ -153,14 +176,14 @@ const MainLayout: React.FC = () => {
 
   if (!isAdminPortal && user.role === 'admin') {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#090D16', color: '#F8FAFC', padding: '24px', textAlign: 'center' }}>
-        <h2 style={{ fontSize: '20px', color: '#6366F1', marginBottom: '8px' }}>Administrator Session Detected</h2>
-        <p style={{ color: '#94A3B8', maxWidth: '440px', lineHeight: 1.5, marginBottom: '20px' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC', color: '#0F172A', padding: '24px', textAlign: 'center' }}>
+        <h2 style={{ fontSize: '20px', color: '#2563EB', marginBottom: '8px' }}>Administrator Session Detected</h2>
+        <p style={{ color: '#64748B', maxWidth: '440px', lineHeight: 1.5, marginBottom: '20px' }}>
           Administrator accounts are managed exclusively on <strong>admin.veyoralabs.net</strong> and cannot access the Student/Parent/Teacher learning application.
         </p>
         <button
           onClick={logout}
-          style={{ padding: '10px 18px', backgroundColor: '#334155', color: '#FFF', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+          style={{ padding: '10px 18px', backgroundColor: '#2563EB', color: '#FFF', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
         >
           Sign Out
         </button>
@@ -174,67 +197,67 @@ const MainLayout: React.FC = () => {
     switch (route) {
 
       case 'admin-dashboard':
-        current = 'Ingestion & Overview';
+        current = 'Dashboard';
         break;
       case 'admin-students':
-        current = 'Students Governance';
+        current = 'Students';
         break;
       case 'admin-parents':
-        current = 'Parents Governance';
+        current = 'Parents';
         break;
       case 'admin-teachers':
-        current = 'Teachers Governance';
+        current = 'Teachers';
         break;
       case 'admin-subjects':
-        current = 'Academic Subjects';
+        current = 'Subjects';
         break;
       case 'admin-chapters':
       case 'admin-chapter-detail':
-        current = 'Chapter Curriculum Detail';
+        current = 'Chapters';
         break;
       case 'admin-topics':
       case 'admin-topic-detail':
-        current = 'Topic Detail';
+        current = 'Topics';
         break;
       case 'admin-subtopics':
       case 'admin-subtopic-detail':
-        current = 'Subtopic Detail';
+        current = 'Subtopics';
         break;
       case 'admin-textbooks':
-        current = 'Textbooks & Ingestion';
+        current = 'Textbooks';
         break;
       case 'admin-textbook-review':
-        current = 'Textbook Curriculum Review';
+        current = 'Textbook Review';
         break;
       case 'admin-video-plans':
-        current = 'Video Plan Generation & Review';
+        current = 'Video Plans';
         break;
       case 'admin-script-review':
-        current = 'Educational Script Review & Verification';
+        current = 'Script Review';
         break;
       case 'admin-video-review':
-        current = 'Video Rendering & Final Review';
+        current = 'Video Review';
         break;
       case 'admin-quizzes':
-        current = 'Interactive Quiz Generation & Review';
+        current = 'Quiz Management';
         break;
       case 'admin-video-studio':
-        current = '⚡ Video Creation Studio';
+        current = 'Video Studio';
         break;
       case 'admin-pipeline':
-        current = 'AI Pipeline Monitor';
+        current = 'Processing Monitor';
         break;
       case 'admin-hierarchy':
-        current = 'Extracted Hierarchy';
+        current = 'Content Hierarchy';
         break;
       case 'admin-review':
-        current = 'Review Queue & Approval Gate';
+        current = 'Content Review';
         break;
       case 'admin-users':
-        current = 'User Governance';
+        current = 'Users';
         break;
       case 'admin-settings':
-        current = 'Mastery Settings';
+        current = 'Settings';
         break;
       case 'student-dashboard':
         current = 'Student Overview';
@@ -354,8 +377,8 @@ const MainLayout: React.FC = () => {
 
       default:
         return (
-          <div style={{ padding: '32px', textAlign: 'center', color: '#94A3B8' }}>
-            <h3>Route not found</h3>
+          <div style={{ padding: '32px', textAlign: 'center', color: 'var(--admin-text-secondary, #64748B)' }}>
+            <h3 style={{ color: 'var(--admin-text, #0F172A)' }}>Route not found</h3>
             <button
               onClick={() => handleNavigate(
                 user.role === 'admin'
@@ -364,7 +387,7 @@ const MainLayout: React.FC = () => {
                     ? 'parent-dashboard'
                     : (user.role === 'teacher' ? 'readonly-dashboard' : 'student-dashboard'))
               )}
-              style={{ marginTop: '12px', padding: '8px 16px', borderRadius: '6px', backgroundColor: '#3B82F6', color: '#FFF', border: 'none', cursor: 'pointer' }}
+              style={{ marginTop: '12px', padding: '8px 16px', borderRadius: '6px', backgroundColor: '#2563EB', color: '#FFF', border: 'none', cursor: 'pointer', fontWeight: 600 }}
             >
               Return to Dashboard
             </button>
@@ -372,6 +395,28 @@ const MainLayout: React.FC = () => {
         );
     }
   };
+
+  if (isAdminPortal) {
+    return (
+      <div className="app-container" style={{ backgroundColor: 'var(--admin-bg)' }}>
+        <AdminSidebar
+          currentRoute={route}
+          onRouteChange={(r) => handleNavigate(r)}
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={toggleSidebarCollapsed}
+          mobileOpen={mobileSidebarOpen}
+          onCloseMobile={() => setMobileSidebarOpen(false)}
+        />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <AdminHeader
+            breadcrumbs={getBreadcrumbs()}
+            onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+          />
+          <main className="main-content">{renderContent()}</main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">

@@ -24,31 +24,41 @@ from .ai_extractor import get_curriculum_extractor, AIProviderUnavailableError
 
 def run_stages_1_to_5(db: Session, textbook_id: int):
     """
-    Executes Stages 1 through 5 for an uploaded textbook:
-    Stage 1: PDF Ingestion & text extraction
-    Stage 2: Hierarchical extraction (Chapters -> Topics -> Subtopics)
-    Stage 3: Content segmentation into dynamic modular units
-    Stage 4: Narration script generation & pre-rendered video metadata synthesis (~5.5 min units)
-    Stage 5: Topic quiz generation aligned to learning objectives
-    All generated assets are marked 'REVIEW'/'pending_review' awaiting administrator approval.
+    Executes Stages 1 through 5 for an uploaded textbook using the REAL
+    deterministic engines end-to-end (no placeholder or fabricated assets):
+
+      Stages 1-2: PDF ingestion & hierarchical curriculum extraction
+                  (real page text via extract_pdf_pages + curriculum extractor)
+      Stage 3:    Intelligent content segmentation into ~330s pedagogical units
+      Stage 4:    Video plan persistence (REVIEW status; script generation and
+                  rendering remain approval-gated admin actions — nothing is
+                  auto-SCRIPT_APPROVED and no sample media is copied)
+      Stage 5:    Content-grounded quiz generation per topic (REVIEW status)
+
+    All generated assets await administrator approval before any publication.
     """
+    from .video_segmentation import get_video_segmentation_engine, VideoSegmentationService
+    from .quiz_service import QuizService
+
     textbook = db.get(Textbook, textbook_id)
     if not textbook:
         return
 
     textbook.status = PipelineStatus.processing
-    stages_log = list(textbook.stages_log or [])
+    db.commit()
 
     job = db.query(ProcessingJob).filter(
         ProcessingJob.textbook_id == textbook.id,
         ProcessingJob.status == "PROCESSING"
     ).first()
 
-    def log_stage(stage_num: int, name: str, status: str = "completed"):
+    stages_log = list(textbook.stages_log or [])
+
+    def log_stage(stage_num: int, name: str):
         stages_log.append({
             "stage": stage_num,
             "name": name,
-            "status": status,
+            "status": "completed",
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
         textbook.stages_log = stages_log
@@ -59,7 +69,31 @@ def run_stages_1_to_5(db: Session, textbook_id: int):
         db.commit()
 
     try:
-        # ---- STAGE 1: PDF Ingestion & OCR / Text Extraction ----
+        # ---- STAGES 1-2: REAL PDF ingestion & hierarchical extraction ----
+        # (run_textbook_ingestion_pipeline executes its stages 1-7: validation,
+        #  text extraction, chapter/topic/subtopic extraction, normalization)
+        ingestion_job = run_textbook_ingestion_pipeline(db, textbook_id, job.id if job else None)
+        if (ingestion_job.status or "").upper() != "COMPLETED":
+            textbook.status = PipelineStatus.failed
+            stages_log.append({
+                "stage": textbook.stage or 1,
+                "name": "Pipeline Error",
+                "status": "failed",
+                "error": ingestion_job.error_message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            textbook.stages_log = stages_log
+            if job:
+                job.status = "FAILED"
+                job.error_message = ingestion_job.error_message
+                job.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            return
+
+        db.refresh(textbook)
+        log_stage(2, "Hierarchical Extraction")
+
+        # Resolve PDF file path for content grounding
         storage = get_storage()
         file_path = storage.get_local_path(textbook.storage_key) if textbook.storage_key else textbook.file_path
         if not file_path or not os.path.exists(file_path):
@@ -68,243 +102,59 @@ def run_stages_1_to_5(db: Session, textbook_id: int):
                 candidate = os.path.join(uploads_dir, os.path.basename(textbook.storage_key))
                 if os.path.exists(candidate):
                     file_path = candidate
-
         pages = extract_pdf_pages(file_path, default_title=textbook.title)
-        log_stage(1, "PDF Ingestion & OCR")
 
-        # ---- STAGE 2: Hierarchical Extraction ----
-        # Ensure subject exists
-        subject_id = textbook.subject_id
-        if not subject_id:
-            assigned_ss = db.query(StudentSubject).first()
-            if assigned_ss:
-                subject_id = assigned_ss.subject_id
-            else:
-                subject = db.query(Subject).first()
-                if not subject:
-                    subject = Subject(name=f"Curriculum: {textbook.title}", description=textbook.description)
-                    db.add(subject)
-                    db.flush()
-                subject_id = subject.id
-            textbook.subject_id = subject_id
-
-        # Clear existing textbook hierarchy and topics if re-running
-        old_chapters = db.query(Chapter).filter(Chapter.textbook_id == textbook.id).all()
-        old_ch_ids = [c.id for c in old_chapters]
-        if old_ch_ids:
-            old_topics = db.query(Topic).filter(Topic.chapter_id.in_(old_ch_ids)).all()
-            old_top_ids = [t.id for t in old_topics]
-            if old_top_ids:
-                db.query(Subtopic).filter(Subtopic.topic_id.in_(old_top_ids)).delete(synchronize_session=False)
-                db.query(Topic).filter(Topic.id.in_(old_top_ids)).delete(synchronize_session=False)
-            db.query(Chapter).filter(Chapter.id.in_(old_ch_ids)).delete(synchronize_session=False)
-        db.commit()
-        db.expire_all()
-
-        extractor = get_curriculum_extractor()
-        raw_chapters = extractor.extract_chapters(pages, textbook.title)
-
-        created_topics = []
-        for c_idx, ch_data in enumerate(raw_chapters):
-            ch_clean_title = ch_data["title"].strip()[:200]
-            chapter = Chapter(
-                subject_id=subject_id,
-                textbook_id=textbook.id,
-                chapter_number=ch_data.get("chapter_number", c_idx + 1),
-                title=ch_clean_title,
-                description=ch_data.get("description") or f"Curriculum module covering {ch_clean_title}",
-                source_start_page=ch_data.get("source_start_page", 1),
-                source_end_page=ch_data.get("source_end_page", len(pages)),
-                order_idx=c_idx + 1
-            )
-            db.add(chapter)
-            db.flush()
-
-            ch_pages_slice = [
-                p for p in pages
-                if (ch_data.get("source_start_page") or 1) <= p.get("page_number", 1) <= (ch_data.get("source_end_page") or len(pages))
-            ]
-            ch_text = "\n".join([p.get("text", "") for p in ch_pages_slice])
-
-            raw_topics = extractor.extract_topics(
-                chapter_title=chapter.title,
-                chapter_text=ch_text,
-                start_page=chapter.source_start_page or 1,
-                end_page=chapter.source_end_page or len(pages),
-                pages=ch_pages_slice
-            )
-
-            for t_idx, top_data in enumerate(raw_topics):
-                top_clean = top_data["title"].strip()[:200]
-                topic = Topic(
-                    chapter_id=chapter.id,
-                    title=top_clean,
-                    description=top_data.get("description") or f"Detailed study of {top_clean}",
-                    source_start_page=top_data.get("source_start_page", chapter.source_start_page),
-                    source_end_page=top_data.get("source_end_page", chapter.source_end_page),
-                    sequence_number=top_data.get("sequence_number", t_idx + 1),
-                    order_idx=t_idx + 1
-                )
-                db.add(topic)
-                db.flush()
-                created_topics.append(topic)
-
-                top_pages_slice = [
-                    p for p in ch_pages_slice
-                    if (topic.source_start_page or 1) <= p.get("page_number", 1) <= (topic.source_end_page or len(pages))
-                ]
-                top_text = "\n".join([p.get("text", "") for p in top_pages_slice])
-
-                raw_subs = extractor.extract_subtopics(
-                    topic_title=topic.title,
-                    topic_text=top_text,
-                    start_page=topic.source_start_page or 1,
-                    end_page=topic.source_end_page or len(pages),
-                    pages=top_pages_slice
-                )
-
-                for s_idx, sub_data in enumerate(raw_subs):
-                    sub = Subtopic(
-                        topic_id=topic.id,
-                        title=sub_data["title"].strip()[:200],
-                        description=sub_data.get("description") or f"Granular concept: {sub_data['title']}",
-                        source_start_page=sub_data.get("source_start_page", topic.source_start_page),
-                        source_end_page=sub_data.get("source_end_page", topic.source_end_page),
-                        sequence_number=sub_data.get("sequence_number", s_idx + 1),
-                        order_idx=s_idx + 1
-                    )
-                    db.add(sub)
-
-        db.commit()
-        log_stage(2, "Hierarchical Extraction")
+        topics = (
+            db.query(Topic)
+            .join(Chapter, Topic.chapter_id == Chapter.id)
+            .filter(Chapter.textbook_id == textbook.id)
+            .order_by(Chapter.order_idx, Topic.order_idx)
+            .all()
+        )
 
         # ---- STAGE 3: Intelligent Content Segmentation ----
-        # The AI dynamically structures videos per topic based on content complexity
-        log_stage(3, "Intelligent Content Segmentation")
-
-        # ---- STAGE 4: Script Generation & Pre-Rendered Video Synthesis ----
-        # Clear existing videos
+        # Clear any previously generated plans for this textbook, then generate
+        # REAL page-traceable video plans with the deterministic engine.
         db.query(Video).filter(Video.textbook_id == textbook.id).delete()
         db.commit()
 
-        static_videos_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static", "videos")
-        os.makedirs(static_videos_dir, exist_ok=True)
-        sample_video_path = os.path.join(static_videos_dir, "sample.mp4")
-
-        # Dynamically generate videos per topic (1 to 2 units per topic)
-        for t_idx, topic in enumerate(created_topics):
-            video_count = 2 if (t_idx % 2 == 0) else 1
-            subs = db.query(Subtopic).filter(Subtopic.topic_id == topic.id).order_by(Subtopic.sequence_number).all()
-            sub_titles = [s.title for s in subs]
-            sub_summary = f"Key subtopics analyzed include: {', '.join(sub_titles)}." if sub_titles else ""
-            desc = topic.description or f"Curriculum module on {topic.title}."
-
-            for v_idx in range(video_count):
-                part_title = f"{topic.title} - Part {v_idx + 1}" if video_count > 1 else topic.title
-                script_text = (
-                    f"Welcome to this comprehensive video lesson on {part_title}.\n"
-                    f"{desc}\n"
-                    f"{sub_summary}\n"
-                    f"Notice how each principle directly connects to real-world problem solving and analytical modeling.\n"
-                    f"In summary, mastering {part_title} prepares you for advanced exercises and assessments."
-                )
-
-                video_filename = f"pre_rendered_{textbook.id}_{topic.id}_{v_idx+1}.mp4"
-                target_video_path = os.path.join(static_videos_dir, video_filename)
-                if os.path.exists(sample_video_path) and not os.path.exists(target_video_path):
-                    import shutil
-                    shutil.copyfile(sample_video_path, target_video_path)
-
-                video_url = f"/static/videos/{video_filename}"
-
-                video = Video(
-                    textbook_id=textbook.id,
-                    topic_id=topic.id,
-                    title=f"Lesson: {part_title}",
-                    description=f"Instructional module for {part_title}",
-                    sequence_number=v_idx + 1,
-                    script=script_text,
-                    script_status="SCRIPT_APPROVED",
-                    storage_key=video_url,
-                    video_storage_key=video_url,
-                    duration_seconds=330,  # ~5.5 min target
-                    actual_duration_seconds=330,
-                    render_status="RENDERED",
-                    scenes_data=[{"scene_id": 1, "title": f"Lesson: {part_title}", "narration": script_text, "duration": 330}],
-                    status=VideoStatus.REVIEW.value
-                )
-                db.add(video)
-
+        engine = get_video_segmentation_engine()
+        plan_count = 0
+        for topic in topics:
+            plan_items = engine.segment_topic(topic, list(topic.subtopics), pages)
+            created = VideoSegmentationService.persist_video_plans(
+                db, topic, plan_items, force_regenerate=False
+            )
+            plan_count += len(created)
         db.commit()
-        log_stage(4, "Script Generation & Video Synthesis")
+        log_stage(3, "Intelligent Content Segmentation")
 
-        # ---- STAGE 5: Quiz Generation ----
+        # ---- STAGE 4: Video Plan Persistence (REVIEW — approval gated) ----
+        log_stage(4, f"Video Plan Generation ({plan_count} plans pending review)")
+
+        # ---- STAGE 5: REAL content-grounded quiz generation ----
         db.query(Quiz).filter(Quiz.textbook_id == textbook.id).delete()
         db.commit()
 
-        for topic in created_topics:
-            quiz = Quiz(
-                textbook_id=textbook.id,
-                topic_id=topic.id,
-                title=f"Topic Quiz: {topic.title}",
-                description=f"Objective assessment for {topic.title}",
-                quiz_type="TOPIC",
-                passing_score=80.0,
-                attempt_number=1,
-                status="REVIEW"
-            )
-            db.add(quiz)
-            db.flush()
-
-            q1 = Question(
-                quiz_id=quiz.id,
-                question_text=f"What is the primary conceptual focus of {topic.title}?",
-                options=[
-                    f"Understanding core mechanisms and foundations of {topic.title}",
-                    "Memorizing isolated terminology without context",
-                    "Discarding prerequisite chapter knowledge",
-                    "None of the above"
-                ],
-                correct_answer="0",
-                objective=f"Foundations of {topic.title}",
-                adaptive=False,
-                question_type="MCQ",
-                difficulty="MEDIUM"
-            )
-            q2 = Question(
-                quiz_id=quiz.id,
-                question_text=f"Which method best demonstrates practical mastery in {topic.title}?",
-                options=[
-                    "Passive recitation",
-                    f"Applying theoretical principles to structured problem sets in {topic.title}",
-                    "Ignoring validation and testing criteria",
-                    "Random estimation"
-                ],
-                correct_answer="1",
-                objective=f"Application of {topic.title}",
-                adaptive=False,
-                question_type="MCQ",
-                difficulty="MEDIUM"
-            )
-            q3 = Question(
-                quiz_id=quiz.id,
-                question_text=f"When analyzing {topic.title}, what key outcome indicates successful learning?",
-                options=[
-                    "High error rate on baseline assessments",
-                    "Inability to explain underlying principles",
-                    f"Consistently high concept mastery and accurate problem resolution",
-                    "Skipping video explanations"
-                ],
-                correct_answer="2",
-                objective=f"Synthesis of {topic.title}",
-                adaptive=False,
-                question_type="MCQ",
-                difficulty="HARD"
-            )
-            db.add_all([q1, q2, q3])
-
+        quiz_count = 0
+        quiz_warnings: List[str] = []
+        for topic in topics:
+            try:
+                quiz, _quiz_job = QuizService.generate_quiz_for_topic(db, topic.id)
+                quiz_count += 1
+            except Exception as quiz_err:
+                quiz_warnings.append(f"Topic '{topic.title}': {quiz_err}")
+        for warning in quiz_warnings:
+            stages_log.append({
+                "stage": 5,
+                "name": "Quiz Generation Warning",
+                "status": "warning",
+                "error": warning,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        textbook.stages_log = stages_log
         db.commit()
-        log_stage(5, "Quiz Generation")
+        log_stage(5, f"Quiz Generation ({quiz_count} quizzes pending review)")
 
         textbook.status = PipelineStatus.completed
         if job:

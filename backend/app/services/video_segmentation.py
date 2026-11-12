@@ -399,45 +399,13 @@ class VideoSegmentationService:
             engine = get_video_segmentation_engine()
             plan_items = engine.segment_topic(topic, subtopics, pages_content)
 
-            # Step 3: Video Plan Persistence (90%)
+            # Step 3: Video Plan Persistence (90%) — delegated to the reusable
+            # persistence method (also used by the ingestion pipeline).
             job.current_stage = "PLAN_PERSISTENCE"
             job.progress = 90.0
             db.commit()
 
-            # If force_regenerate, clear previous plans
-            if force_regenerate and existing_videos:
-                for v in existing_videos:
-                    db.delete(v)
-                db.flush()
-
-            created_videos: List[Video] = []
-            for item in plan_items:
-                # Validation Quality Rules
-                if not item.get("title"):
-                    raise ValueError("Generated video plan missing required title")
-                if not item.get("content_outline"):
-                    raise ValueError("Generated video plan missing required content outline")
-                if item.get("estimated_duration_seconds", 0) <= 0:
-                    raise ValueError("Generated video plan cannot have negative or zero duration")
-
-                video = Video(
-                    topic_id=topic.id,
-                    subtopic_id=item.get("subtopic_id"),
-                    textbook_id=topic.chapter.textbook_id if topic.chapter else None,
-                    title=item["title"],
-                    description=item.get("description"),
-                    sequence_number=item["sequence_number"],
-                    duration_seconds=item["estimated_duration_seconds"],
-                    estimated_duration_seconds=item["estimated_duration_seconds"],
-                    source_start_page=item.get("source_start_page"),
-                    source_end_page=item.get("source_end_page"),
-                    learning_objective=item.get("learning_objective"),
-                    content_outline=item.get("content_outline"),
-                    status="REVIEW"
-                )
-                db.add(video)
-                db.flush()
-                created_videos.append(video)
+            created_videos = cls.persist_video_plans(db, topic, plan_items, force_regenerate=force_regenerate)
 
             # Step 4: Complete Job (100%)
             job.status = "COMPLETED"
@@ -454,6 +422,55 @@ class VideoSegmentationService:
             job.completed_at = datetime.now(timezone.utc)
             db.commit()
             raise e
+
+    @classmethod
+    def persist_video_plans(
+        cls,
+        db: Session,
+        topic: Topic,
+        plan_items: List[Dict[str, Any]],
+        force_regenerate: bool = False
+    ) -> List[Video]:
+        """
+        Persists segmentation plan items as canonical Video rows in REVIEW status.
+        Shared by the approval-gated service workflow and the ingestion pipeline.
+        """
+        existing_videos = db.query(Video).filter(Video.topic_id == topic.id).order_by(Video.sequence_number.asc()).all()
+        if force_regenerate and existing_videos:
+            for v in existing_videos:
+                db.delete(v)
+            db.flush()
+
+        created_videos: List[Video] = []
+        for item in plan_items:
+            # Validation Quality Rules
+            if not item.get("title"):
+                raise ValueError("Generated video plan missing required title")
+            if not item.get("content_outline"):
+                raise ValueError("Generated video plan missing required content outline")
+            if item.get("estimated_duration_seconds", 0) <= 0:
+                raise ValueError("Generated video plan cannot have negative or zero duration")
+
+            video = Video(
+                topic_id=topic.id,
+                subtopic_id=item.get("subtopic_id"),
+                textbook_id=topic.chapter.textbook_id if topic.chapter else None,
+                title=item["title"],
+                description=item.get("description"),
+                sequence_number=item["sequence_number"],
+                duration_seconds=item["estimated_duration_seconds"],
+                estimated_duration_seconds=item["estimated_duration_seconds"],
+                source_start_page=item.get("source_start_page"),
+                source_end_page=item.get("source_end_page"),
+                learning_objective=item.get("learning_objective"),
+                content_outline=item.get("content_outline"),
+                status="REVIEW"
+            )
+            db.add(video)
+            db.flush()
+            created_videos.append(video)
+
+        return created_videos
 
     @classmethod
     def generate_video_plans_for_chapter(

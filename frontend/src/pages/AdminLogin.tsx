@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../lib/authContext';
+import { School } from 'lucide-react';
 
 export const AdminLogin: React.FC = () => {
   const { login } = useAuth();
@@ -29,65 +30,61 @@ export const AdminLogin: React.FC = () => {
     <div
       style={{
         minHeight: '100vh',
-        backgroundColor: '#090A10',
-        backgroundImage: 'radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.18) 0%, transparent 70%)',
+        backgroundColor: '#F8FAFC',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '24px',
-        color: '#F8FAFC',
+        color: '#0F172A',
         fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
       }}
     >
-      <div style={{ width: '100%', maxWidth: '440px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ width: '100%', maxWidth: '440px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
         {/* Header branding */}
         <div style={{ textAlign: 'center' }}>
           <div
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '8px',
-              padding: '6px 14px',
-              borderRadius: '999px',
-              backgroundColor: 'rgba(99, 102, 241, 0.12)',
-              border: '1px solid rgba(99, 102, 241, 0.3)',
-              color: '#A5B4FC',
-              fontSize: '12px',
-              fontWeight: 600,
+              justifyContent: 'center',
+              width: '44px',
+              height: '44px',
+              borderRadius: '10px',
+              backgroundColor: '#2563EB',
+              color: '#FFFFFF',
               marginBottom: '14px',
-              letterSpacing: '0.04em',
             }}
           >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#6366F1' }} />
-            admin.veyoralabs.net
+            <School size={22} />
           </div>
-          <h1 style={{ fontSize: '26px', fontWeight: 700, margin: '0 0 6px 0', color: '#FFFFFF' }}>
-            Admin Portal
+          <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 6px 0', color: '#0F172A', letterSpacing: '-0.01em' }}>
+            Veyora Admin
           </h1>
-          <p style={{ fontSize: '14px', color: '#94A3B8', margin: 0 }}>
-            Curriculum Governance & Academic Operations
+          <p style={{ fontSize: '14px', color: '#64748B', margin: 0 }}>
+            Education administration console
           </p>
         </div>
 
         {/* Auth Card */}
         <div
           style={{
-            backgroundColor: '#11131E',
-            borderRadius: '16px',
-            border: '1px solid #1E2235',
-            padding: '30px',
-            boxShadow: '0 20px 40px -15px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+            backgroundColor: '#FFFFFF',
+            borderRadius: '10px',
+            border: '1px solid #E2E8F0',
+            padding: '28px',
+            boxShadow: '0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.06)',
           }}
         >
           {error && (
             <div
+              role="alert"
               style={{
                 padding: '12px 14px',
                 borderRadius: '8px',
-                backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.35)',
-                color: '#F87171',
+                backgroundColor: '#FEF2F2',
+                border: '1px solid #FECACA',
+                color: '#DC2626',
                 fontSize: '13px',
                 marginBottom: '20px',
                 lineHeight: 1.4,
@@ -99,7 +96,7 @@ export const AdminLogin: React.FC = () => {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#E2E8F0', marginBottom: '6px' }}>
+              <label htmlFor="admin-email-input" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#0F172A', marginBottom: '6px' }}>
                 Admin Email
               </label>
               <input
@@ -111,14 +108,15 @@ export const AdminLogin: React.FC = () => {
                 placeholder="admin@example.com"
                 style={{
                   width: '100%',
-                  padding: '11px 14px',
-                  borderRadius: '8px',
-                  backgroundColor: '#0A0C14',
-                  border: '1px solid #2B324D',
-                  color: '#F8FAFC',
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: '#FFFFFF',
+                  border: '1px solid #E2E8F0',
+                  color: '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   boxSizing: 'border-box',
+                  fontFamily: 'inherit',
                 }}
               />
               <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#64748B' }}>
@@ -127,7 +125,7 @@ export const AdminLogin: React.FC = () => {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#E2E8F0', marginBottom: '6px' }}>
+              <label htmlFor="admin-password-input" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#0F172A', marginBottom: '6px' }}>
                 Password
               </label>
               <input
@@ -139,14 +137,15 @@ export const AdminLogin: React.FC = () => {
                 placeholder="Enter your password"
                 style={{
                   width: '100%',
-                  padding: '11px 14px',
-                  borderRadius: '8px',
-                  backgroundColor: '#0A0C14',
-                  border: '1px solid #2B324D',
-                  color: '#F8FAFC',
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: '#FFFFFF',
+                  border: '1px solid #E2E8F0',
+                  color: '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   boxSizing: 'border-box',
+                  fontFamily: 'inherit',
                 }}
               />
             </div>
@@ -157,26 +156,27 @@ export const AdminLogin: React.FC = () => {
               disabled={loading}
               style={{
                 marginTop: '6px',
-                padding: '12px',
-                borderRadius: '8px',
-                backgroundColor: '#4F46E5',
-                backgroundImage: 'linear-gradient(180deg, #6366F1 0%, #4F46E5 100%)',
+                padding: '11px',
+                borderRadius: '6px',
+                backgroundColor: '#2563EB',
                 color: '#FFFFFF',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                border: 'none',
                 fontWeight: 600,
                 fontSize: '14px',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 opacity: loading ? 0.75 : 1,
-                boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
-                transition: 'all 0.15s ease',
+                fontFamily: 'inherit',
               }}
             >
-              {loading ? 'Authenticating...' : 'Sign In as Administrator'}
+              {loading ? 'Signing in…' : 'Sign In'}
             </button>
           </form>
         </div>
+
+        <p style={{ textAlign: 'center', fontSize: '12px', color: '#64748B' }}>
+          admin.veyoralabs.net · Administrator accounts only
+        </p>
       </div>
     </div>
   );
 };
-

@@ -1,6 +1,27 @@
 import React, { useState, useEffect } from 'react';
+import {
+  Zap,
+  Rocket,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  X,
+  BookOpen,
+  FileText,
+  Loader2,
+  Clock,
+  Mic,
+  Clapperboard,
+  FileQuestion,
+  ListTree,
+  Sparkles,
+  Loader,
+  Tag as TagIcon,
+} from 'lucide-react';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { StatusBadge } from '../../components/StatusBadge';
+import { LoadingState } from '../../components/admin/LoadingState';
+import { EmptyState } from '../../components/admin/EmptyState';
 import { api } from '../../lib/api';
 import { Textbook, SubjectItem, TextbookHierarchy, PipelineStatus } from '../../lib/types';
 
@@ -25,12 +46,12 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
   const [fastTrack, setFastTrack] = useState<boolean>(true);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<number | ''>('');
-  
+
   // Multi-upload queue state
   const [queuedFiles, setQueuedFiles] = useState<QueuedUploadItem[]>([]);
   const [activeTextbookId, setActiveTextbookId] = useState<number | null>(initialTextbookId || null);
   const [activeTextbook, setActiveTextbook] = useState<Textbook | null>(null);
-  
+
   // Pipeline & Hierarchy state
   const [hierarchy, setHierarchy] = useState<TextbookHierarchy | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
@@ -220,65 +241,73 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
       {/* Top Header & Fast Track Toggle */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)' }}>
-              ⚡ Video Creation Studio
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--admin-text)', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '-0.01em' }}>
+              <Zap size={20} style={{ color: 'var(--admin-primary)' }} />
+              Video Creation Studio
             </h1>
             <span
+              className="adm-badge"
               style={{
-                fontSize: '11px',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                padding: '4px 10px',
-                borderRadius: '12px',
-                backgroundColor: 'rgba(99, 102, 241, 0.15)',
-                color: '#818CF8',
-                border: '1px solid rgba(99, 102, 241, 0.3)',
+                backgroundColor: 'var(--admin-primary-soft)',
+                color: 'var(--admin-primary)',
+                border: '1px solid var(--admin-border)',
               }}
             >
               One-Flow Pipeline
             </span>
           </div>
-          <p style={{ fontSize: '14px', color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
+          <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', marginTop: '4px', maxWidth: '640px' }}>
             Upload textbooks, extract actual topics directly from your PDF content, and synthesize video lessons one after another.
           </p>
         </div>
 
         {/* Fast-Track Auto-Advance Toggle */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '8px 16px',
-            backgroundColor: fastTrack ? 'rgba(16, 185, 129, 0.1)' : 'var(--admin-surface)',
-            border: `1px solid ${fastTrack ? '#10B981' : 'var(--admin-border)'}`,
-            borderRadius: '10px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-          onClick={() => setFastTrack(!fastTrack)}
-        >
-          <input
-            type="checkbox"
-            checked={fastTrack}
-            onChange={(e) => setFastTrack(e.target.checked)}
-            style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-          />
-          <div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: fastTrack ? '#10B981' : 'var(--admin-text)' }}>
-              ⚡ Auto-Advance (Fast-Track)
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
-              {fastTrack ? 'Auto-runs all 5 stages straight to Final Review' : 'Manual step-by-step confirmation'}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '8px 16px',
+              backgroundColor: fastTrack ? 'var(--admin-success-soft)' : 'var(--admin-surface)',
+              border: `1px solid ${fastTrack ? 'var(--admin-success)' : 'var(--admin-border)'}`,
+              borderRadius: 'var(--radius-lg)',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+            onClick={() => setFastTrack(!fastTrack)}
+          >
+            <input
+              type="checkbox"
+              checked={fastTrack}
+              onChange={(e) => setFastTrack(e.target.checked)}
+              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+              aria-label="Auto-advance (fast-track)"
+            />
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: fastTrack ? 'var(--admin-success)' : 'var(--admin-text)',
+                }}
+              >
+                <Zap size={13} />
+                Auto-Advance (Fast-Track)
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
+                {fastTrack ? 'Auto-runs all 5 stages straight to Final Review' : 'Manual step-by-step confirmation'}
+              </div>
             </div>
           </div>
-        </div>
       </div>
 
       {/* Stepper Progress Bar */}
       <SurfacePanel>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', flexWrap: 'wrap', gap: '8px' }}>
           {steps.map((st) => {
             const isCompleted = activeStep > st.number;
             const isCurrent = activeStep === st.number;
@@ -295,8 +324,8 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                   cursor: activeTextbookId || st.number === 1 ? 'pointer' : 'not-allowed',
                   opacity: activeTextbookId || st.number === 1 ? 1 : 0.5,
                   padding: '6px 12px',
-                  borderRadius: '8px',
-                  backgroundColor: isCurrent ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: isCurrent ? 'var(--admin-primary-soft)' : 'transparent',
                 }}
               >
                 <div
@@ -304,20 +333,24 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                     width: '32px',
                     height: '32px',
                     borderRadius: '50%',
-                    backgroundColor: isCompleted ? '#10B981' : isCurrent ? '#3B82F6' : '#1E293B',
-                    color: '#FFF',
+                    backgroundColor: isCompleted
+                      ? 'var(--admin-success)'
+                      : isCurrent
+                      ? 'var(--admin-primary)'
+                      : 'var(--admin-surface-raised)',
+                    color: isCompleted || isCurrent ? '#FFFFFF' : 'var(--admin-text-secondary)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 700,
                     fontSize: '13px',
-                    border: isCurrent ? '2px solid #60A5FA' : '1px solid #334155',
+                    border: isCurrent ? '2px solid var(--admin-primary)' : '1px solid var(--admin-border)',
                   }}
                 >
-                  {isCompleted ? '✓' : st.number}
+                  {isCompleted ? <Check size={15} strokeWidth={3} /> : st.number}
                 </div>
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: isCurrent ? '#60A5FA' : 'var(--admin-text)' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: isCurrent ? 'var(--admin-primary)' : 'var(--admin-text)' }}>
                     {st.title}
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>{st.subtitle}</div>
@@ -332,7 +365,7 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
       {activeStep === 1 && (
         <SurfacePanel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--admin-text)' }}>
                   1. Select & Upload Textbook PDF(s)
@@ -344,18 +377,15 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
 
               {/* Subject Selector */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', fontWeight: 600 }}>Subject:</label>
+                <label style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', fontWeight: 600 }} htmlFor="studio-subject">
+                  Subject:
+                </label>
                 <select
+                  id="studio-subject"
+                  className="adm-select"
+                  style={{ width: 'auto', minWidth: '180px' }}
                   value={selectedSubjectId}
                   onChange={(e) => setSelectedSubjectId(Number(e.target.value))}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--admin-bg)',
-                    border: '1px solid var(--admin-border)',
-                    color: 'var(--admin-text)',
-                    fontSize: '13px',
-                  }}
                 >
                   {subjects.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -370,10 +400,10 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
             <div
               style={{
                 border: '2px dashed var(--admin-border)',
-                borderRadius: '12px',
+                borderRadius: 'var(--radius-lg)',
                 padding: '40px 20px',
                 textAlign: 'center',
-                backgroundColor: 'rgba(255,255,255,0.01)',
+                backgroundColor: 'var(--admin-surface-raised)',
                 cursor: 'pointer',
               }}
               onClick={() => document.getElementById('studio-file-input')?.click()}
@@ -386,7 +416,21 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                 style={{ display: 'none' }}
                 onChange={handleFilesSelected}
               />
-              <div style={{ fontSize: '36px', marginBottom: '8px' }}>📚</div>
+              <div
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '999px',
+                  backgroundColor: 'var(--admin-primary-soft)',
+                  color: 'var(--admin-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 8px auto',
+                }}
+              >
+                <BookOpen size={20} />
+              </div>
               <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--admin-text)' }}>
                 Click to browse or drag & drop textbook PDFs here
               </div>
@@ -409,46 +453,51 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       padding: '12px 16px',
-                      borderRadius: '8px',
-                      backgroundColor: 'var(--admin-bg)',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: 'var(--admin-surface-raised)',
                       border: '1px solid var(--admin-border)',
+                      gap: '12px',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '18px' }}>📄</span>
-                      <div>
-                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)' }}>
-                          {item.title}
-                        </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                      <FileText size={18} style={{ color: 'var(--admin-text-secondary)', flexShrink: 0 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)' }}>{item.title}</div>
                         <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
                           {(item.file.size / (1024 * 1024)).toFixed(2)} MB • {item.progressMessage || 'Ready to process'}
                         </div>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                       {item.status === 'processing' && (
-                        <span style={{ fontSize: '12px', color: '#60A5FA', fontWeight: 600 }}>
-                          ⚙️ Synthesizing Curriculum...
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--admin-primary)', fontWeight: 600 }}>
+                          <Loader2 size={13} />
+                          Synthesizing Curriculum…
                         </span>
                       )}
                       {item.status === 'completed' && (
-                        <span style={{ fontSize: '12px', color: '#10B981', fontWeight: 600 }}>
-                          ✓ Completed
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--admin-success)', fontWeight: 600 }}>
+                          <CheckCircle2 size={13} />
+                          Completed
                         </span>
                       )}
                       {item.status === 'pending' && (
                         <button
+                          type="button"
                           onClick={() => removeQueuedFile(item.id)}
+                          aria-label={`Remove ${item.title} from queue`}
                           style={{
                             background: 'transparent',
                             border: 'none',
-                            color: '#EF4444',
+                            color: 'var(--admin-error)',
                             cursor: 'pointer',
-                            fontSize: '14px',
+                            display: 'inline-flex',
+                            padding: '4px',
+                            borderRadius: 'var(--radius-sm)',
                           }}
                         >
-                          ✕
+                          <X size={15} />
                         </button>
                       )}
                     </div>
@@ -456,25 +505,14 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                 ))}
 
                 <button
+                  type="button"
+                  className="adm-btn adm-btn-primary"
                   onClick={handleUploadAndRunAll}
                   disabled={loading}
-                  style={{
-                    marginTop: '10px',
-                    padding: '12px 24px',
-                    borderRadius: '8px',
-                    backgroundColor: '#3B82F6',
-                    color: '#FFF',
-                    fontWeight: 700,
-                    fontSize: '14px',
-                    border: 'none',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                  }}
+                  style={{ marginTop: '10px', alignSelf: 'flex-start', padding: '10px 24px' }}
                 >
-                  <span>{loading ? 'Processing Queue...' : '🚀 Upload & Run 6-Stage Pipeline for All'}</span>
+                  {loading ? <Loader size={15} /> : <Rocket size={15} />}
+                  {loading ? 'Processing Queue…' : 'Upload & Run 6-Stage Pipeline for All'}
                 </button>
               </div>
             )}
@@ -485,37 +523,27 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                 style={{
                   marginTop: '16px',
                   padding: '16px',
-                  borderRadius: '10px',
-                  backgroundColor: 'rgba(59, 130, 246, 0.05)',
-                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                  borderRadius: 'var(--radius-lg)',
+                  backgroundColor: 'var(--admin-primary-soft)',
+                  border: '1px solid var(--admin-border)',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ fontWeight: 600, color: '#60A5FA', fontSize: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--admin-primary)', fontSize: '14px' }}>
+                      <Loader2 size={14} />
                       Active Extraction: #{activeTextbookId} {activeTextbook?.title || 'Textbook'}
                     </div>
                     <StatusBadge status={pipelineStatus.pipeline_status} />
                   </div>
-                  <button
-                    onClick={() => setActiveStep(2)}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      backgroundColor: '#3B82F6',
-                      color: '#FFF',
-                      border: 'none',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    View Real Curriculum Hierarchy →
+                  <button type="button" className="adm-btn adm-btn-primary adm-btn-sm" onClick={() => setActiveStep(2)}>
+                    View Real Curriculum Hierarchy
+                    <ArrowRight size={13} />
                   </button>
                 </div>
 
                 {/* Stages progress bar */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
                   {[
                     { num: 1, name: 'PDF Ingestion & OCR' },
                     { num: 2, name: 'Topic Extraction' },
@@ -530,16 +558,20 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                         key={s.num}
                         style={{
                           padding: '8px',
-                          borderRadius: '6px',
-                          backgroundColor: isDone ? 'rgba(16, 185, 129, 0.2)' : 'var(--admin-bg)',
-                          border: `1px solid ${isDone ? '#10B981' : 'var(--admin-border)'}`,
+                          borderRadius: 'var(--radius-sm)',
+                          backgroundColor: isDone ? 'var(--admin-success-soft)' : 'var(--admin-surface)',
+                          border: `1px solid ${isDone ? 'var(--admin-success)' : 'var(--admin-border)'}`,
                           fontSize: '11px',
                           textAlign: 'center',
-                          color: isDone ? '#34D399' : 'var(--admin-text-secondary)',
+                          color: isDone ? 'var(--admin-success)' : 'var(--admin-text-secondary)',
                           fontWeight: isDone ? 700 : 500,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '5px',
                         }}
                       >
-                        {isDone ? '✓ ' : `${s.num}. `}
+                        {isDone ? <Check size={11} strokeWidth={3} /> : <span>{s.num}.</span>}
                         {s.name}
                       </div>
                     );
@@ -555,7 +587,7 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
       {activeStep === 2 && (
         <SurfacePanel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)' }}>
                   2. Extracted Textbook Curriculum
@@ -564,20 +596,9 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                   Chapters, topics, and subtopics parsed directly from your uploaded document.
                 </p>
               </div>
-              <button
-                onClick={() => setActiveStep(3)}
-                style={{
-                  padding: '9px 18px',
-                  borderRadius: '8px',
-                  backgroundColor: '#3B82F6',
-                  color: '#FFF',
-                  border: 'none',
-                  fontWeight: 600,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                }}
-              >
-                Confirm Curriculum & View Video Plans →
+              <button type="button" className="adm-btn adm-btn-primary" onClick={() => setActiveStep(3)}>
+                Confirm Curriculum & View Video Plans
+                <ArrowRight size={14} />
               </button>
             </div>
 
@@ -588,13 +609,14 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                     key={ch.id}
                     style={{
                       border: '1px solid var(--admin-border)',
-                      borderRadius: '10px',
+                      borderRadius: 'var(--radius-lg)',
                       padding: '16px',
-                      backgroundColor: 'var(--admin-bg)',
+                      backgroundColor: 'var(--admin-surface-raised)',
                     }}
                   >
-                    <div style={{ fontSize: '15px', fontWeight: 700, color: '#818CF8', marginBottom: '8px' }}>
-                      📑 Chapter {ch.chapter_number}: {ch.title}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', fontWeight: 700, color: 'var(--admin-text)', marginBottom: '8px' }}>
+                      <ListTree size={16} style={{ color: 'var(--admin-primary)', flexShrink: 0 }} />
+                      Chapter {ch.chapter_number}: {ch.title}
                     </div>
                     {ch.description && (
                       <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '12px' }}>
@@ -608,14 +630,15 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                         <div
                           key={top.id}
                           style={{
-                            borderLeft: '2px solid #3B82F6',
+                            borderLeft: '2px solid var(--admin-primary)',
                             paddingLeft: '12px',
                             paddingTop: '4px',
                             paddingBottom: '4px',
                           }}
                         >
-                          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)' }}>
-                            🏷️ Topic {top.sequence_number}: {top.title}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)' }}>
+                            <TagIcon size={13} style={{ color: 'var(--admin-primary)', flexShrink: 0 }} />
+                            Topic {top.sequence_number}: {top.title}
                           </div>
                           {top.description && (
                             <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
@@ -632,13 +655,13 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                                   style={{
                                     fontSize: '11px',
                                     padding: '3px 8px',
-                                    borderRadius: '6px',
-                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                    color: '#93C5FD',
-                                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    backgroundColor: 'var(--admin-primary-soft)',
+                                    color: 'var(--admin-primary)',
+                                    border: '1px solid var(--admin-border)',
                                   }}
                                 >
-                                  🔹 {sub.title}
+                                  {sub.title}
                                 </span>
                               ))}
                             </div>
@@ -649,10 +672,14 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                   </div>
                 ))}
               </div>
+            ) : loading ? (
+              <LoadingState label="Loading extracted hierarchy…" rows={4} variant="table" />
             ) : (
-              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--admin-text-secondary)' }}>
-                {loading ? 'Loading extracted hierarchy...' : 'No hierarchy found. Please run the pipeline first.'}
-              </div>
+              <EmptyState
+                icon={<ListTree size={20} />}
+                title="No hierarchy found"
+                description="No curriculum hierarchy is available for this textbook yet. Please run the pipeline first."
+              />
             )}
           </div>
         </SurfacePanel>
@@ -662,7 +689,7 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
       {activeStep === 3 && (
         <SurfacePanel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)' }}>
                   3. Topic-Aligned Video Plans (~5.5 Min Units)
@@ -671,20 +698,9 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                   Micro-learning video segmentations derived dynamically from your curriculum complexity.
                 </p>
               </div>
-              <button
-                onClick={() => setActiveStep(4)}
-                style={{
-                  padding: '9px 18px',
-                  borderRadius: '8px',
-                  backgroundColor: '#3B82F6',
-                  color: '#FFF',
-                  border: 'none',
-                  fontWeight: 600,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                }}
-              >
-                Confirm Video Plans & View Narration Scripts →
+              <button type="button" className="adm-btn adm-btn-primary" onClick={() => setActiveStep(4)}>
+                Confirm Video Plans & View Narration Scripts
+                <ArrowRight size={14} />
               </button>
             </div>
 
@@ -694,19 +710,20 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                   key={t.id}
                   style={{
                     padding: '16px',
-                    borderRadius: '10px',
-                    backgroundColor: 'var(--admin-bg)',
+                    borderRadius: 'var(--radius-lg)',
+                    backgroundColor: 'var(--admin-surface-raised)',
                     border: '1px solid var(--admin-border)',
                   }}
                 >
-                  <div style={{ fontSize: '11px', color: '#60A5FA', fontWeight: 700, textTransform: 'uppercase' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--admin-primary)', fontWeight: 700, textTransform: 'uppercase' }}>
                     Topic Video Unit #{idx + 1}
                   </div>
                   <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)', marginTop: '4px' }}>
                     {t.title}
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '6px' }}>
-                    ⏱ Target Duration: ~5.5 mins • {t.subtopics?.length || 2} Concept Modules
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '6px' }}>
+                    <Clock size={12} />
+                    Target Duration: ~5.5 mins • {t.subtopics?.length || 2} Concept Modules
                   </div>
                 </div>
               ))}
@@ -719,7 +736,7 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
       {activeStep === 4 && (
         <SurfacePanel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)' }}>
                   4. Generated Educational Narration Scripts
@@ -728,20 +745,9 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                   Narration text grounded in real definitions from your uploaded PDF text.
                 </p>
               </div>
-              <button
-                onClick={() => setActiveStep(5)}
-                style={{
-                  padding: '9px 18px',
-                  borderRadius: '8px',
-                  backgroundColor: '#3B82F6',
-                  color: '#FFF',
-                  border: 'none',
-                  fontWeight: 600,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                }}
-              >
-                Proceed to Consolidated Review & Publish →
+              <button type="button" className="adm-btn adm-btn-primary" onClick={() => setActiveStep(5)}>
+                Proceed to Consolidated Review & Publish
+                <ArrowRight size={14} />
               </button>
             </div>
 
@@ -751,24 +757,27 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                   key={t.id}
                   style={{
                     padding: '16px',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--admin-bg)',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--admin-surface-raised)',
                     border: '1px solid var(--admin-border)',
                   }}
                 >
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#818CF8' }}>
-                    🎙️ Narration Script: {t.title}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 600, color: 'var(--admin-primary)' }}>
+                    <Mic size={14} />
+                    Narration Script: {t.title}
                   </div>
                   <div
                     style={{
                       marginTop: '8px',
-                      fontSize: '13px',
+                      fontSize: '12px',
+                      lineHeight: 1.7,
                       color: 'var(--admin-text)',
-                      lineHeight: 1.6,
-                      backgroundColor: 'rgba(0,0,0,0.2)',
+                      backgroundColor: 'var(--admin-surface)',
+                      border: '1px solid var(--admin-border)',
                       padding: '12px',
-                      borderRadius: '6px',
-                      fontFamily: 'monospace',
+                      borderRadius: 'var(--radius-sm)',
+                      fontFamily: "'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace",
+                      whiteSpace: 'pre-wrap',
                     }}
                   >
                     Welcome to this video lesson on {t.title}. {t.description || 'Core study of the algorithmic concept.'} Key
@@ -789,34 +798,29 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
               <div
                 style={{
                   padding: '16px 20px',
-                  borderRadius: '10px',
-                  backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                  border: '1px solid #10B981',
-                  color: '#34D399',
+                  borderRadius: 'var(--radius-lg)',
+                  backgroundColor: 'var(--admin-success-soft)',
+                  border: '1px solid var(--admin-success)',
+                  color: 'var(--admin-success)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px',
                 }}
               >
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '15px' }}>🎉 Successfully Published to Students!</div>
-                  <div style={{ fontSize: '13px', marginTop: '2px', color: '#A7F3D0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '15px' }}>
+                    <Sparkles size={16} />
+                    Successfully Published to Students!
+                  </div>
+                  <div style={{ fontSize: '13px', marginTop: '2px', color: 'var(--admin-text-secondary)' }}>
                     All chapters, video lessons, and topic quizzes are now active and visible on the student learning portal.
                   </div>
                 </div>
-                <button
-                  onClick={() => onNavigate('student-dashboard')}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#10B981',
-                    color: '#FFF',
-                    fontWeight: 600,
-                    borderRadius: '6px',
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  View as Student →
+                <button type="button" className="adm-btn adm-btn-primary" onClick={() => onNavigate('student-dashboard')}>
+                  View as Student
+                  <ArrowRight size={14} />
                 </button>
               </div>
             )}
@@ -827,42 +831,48 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                   5. Consolidated Review & Publication Gate
                 </h2>
                 <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                  Textbook #{activeTextbookId}: {activeTextbook?.title} • Review curriculum, video lessons, and quizzes in one screen.
+                  Textbook #{activeTextbookId ?? '—'}: {activeTextbook?.title ?? '—'} • Review curriculum, video lessons, and quizzes in one screen.
                 </p>
               </div>
 
               <button
+                type="button"
                 onClick={handleFinalPublish}
                 disabled={publishing || publishSuccess}
                 style={{
-                  padding: '12px 28px',
-                  borderRadius: '8px',
-                  backgroundColor: publishSuccess ? '#059669' : '#10B981',
-                  color: '#FFF',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  padding: '10px 28px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  backgroundColor: 'var(--admin-success)',
+                  color: '#FFFFFF',
                   fontWeight: 700,
                   fontSize: '14px',
-                  border: 'none',
                   cursor: publishing || publishSuccess ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
                 }}
               >
-                {publishing ? 'Publishing Everything...' : publishSuccess ? '✓ Published to Students' : '🚀 Approve & Publish Everything'}
+                {publishing ? <Loader size={15} /> : <Rocket size={15} />}
+                {publishing ? 'Publishing Everything…' : publishSuccess ? 'Published to Students' : 'Approve & Publish Everything'}
               </button>
             </div>
 
             {/* 3-Column Consolidated Review Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' }}>
               {/* Column 1: Curriculum Tree */}
               <div
                 style={{
                   border: '1px solid var(--admin-border)',
-                  borderRadius: '10px',
+                  borderRadius: 'var(--radius-lg)',
                   padding: '16px',
-                  backgroundColor: 'var(--admin-bg)',
+                  backgroundColor: 'var(--admin-surface-raised)',
                 }}
               >
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#818CF8', marginBottom: '12px' }}>
-                  📑 Verified Curriculum
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 700, color: 'var(--admin-primary)', marginBottom: '12px' }}>
+                  <ListTree size={15} />
+                  Verified Curriculum
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto' }}>
                   {hierarchy?.chapters?.map((ch) => (
@@ -870,7 +880,7 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                       <div style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{ch.title}</div>
                       {ch.topics?.map((t) => (
                         <div key={t.id} style={{ paddingLeft: '12px', color: 'var(--admin-text-secondary)', fontSize: '12px', marginTop: '4px' }}>
-                          • {t.title}
+                          {t.title}
                         </div>
                       ))}
                     </div>
@@ -882,18 +892,19 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
               <div
                 style={{
                   border: '1px solid var(--admin-border)',
-                  borderRadius: '10px',
+                  borderRadius: 'var(--radius-lg)',
                   padding: '16px',
-                  backgroundColor: 'var(--admin-bg)',
+                  backgroundColor: 'var(--admin-surface-raised)',
                 }}
               >
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#60A5FA', marginBottom: '12px' }}>
-                  🎬 Pre-Rendered Video Preview
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 700, color: 'var(--admin-primary)', marginBottom: '12px' }}>
+                  <Clapperboard size={15} />
+                  Pre-Rendered Video Preview
                 </div>
                 <div
                   style={{
-                    backgroundColor: '#000',
-                    borderRadius: '8px',
+                    backgroundColor: '#0F172A',
+                    borderRadius: 'var(--radius-md)',
                     aspectRatio: '16/9',
                     display: 'flex',
                     alignItems: 'center',
@@ -918,13 +929,14 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
               <div
                 style={{
                   border: '1px solid var(--admin-border)',
-                  borderRadius: '10px',
+                  borderRadius: 'var(--radius-lg)',
                   padding: '16px',
-                  backgroundColor: 'var(--admin-bg)',
+                  backgroundColor: 'var(--admin-surface-raised)',
                 }}
               >
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#F59E0B', marginBottom: '12px' }}>
-                  🎯 Aligned Topic Quizzes
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 700, color: 'var(--admin-warning)', marginBottom: '12px' }}>
+                  <FileQuestion size={15} />
+                  Aligned Topic Quizzes
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto' }}>
                   {hierarchy?.chapters?.flatMap((c) => c.topics || []).slice(0, 3).map((t, idx) => (
@@ -932,9 +944,9 @@ export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, 
                       key={t.id}
                       style={{
                         padding: '10px',
-                        borderRadius: '6px',
-                        backgroundColor: 'rgba(245, 158, 11, 0.05)',
-                        border: '1px solid rgba(245, 158, 11, 0.2)',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--admin-warning-soft)',
+                        border: '1px solid var(--admin-border)',
                       }}
                     >
                       <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--admin-text)' }}>

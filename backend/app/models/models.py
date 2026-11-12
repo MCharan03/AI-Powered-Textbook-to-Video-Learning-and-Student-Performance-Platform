@@ -463,6 +463,10 @@ class StudentVideoProgress(Base):
     video_id = Column(Integer, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False, index=True)
     watch_percentage = Column(Float, default=0.0, nullable=False)
     last_position_seconds = Column(Float, default=0.0, nullable=False)
+    # Accumulated seconds of ACTUAL playback (excludes paused time and seeks).
+    # The server derives completion coverage from this value, so seeking
+    # directly to the end cannot count as watching.
+    watched_seconds = Column(Float, default=0.0, nullable=False)
     completed = Column(Boolean, default=False, nullable=False)
     started_at = Column(DateTime, default=utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)

@@ -919,6 +919,29 @@ def approve_script(
 # BUILD 06: VIDEO GENERATION & ADMIN VIDEO REVIEW ENDPOINTS
 # ==============================================================================
 
+# Tolerate legacy scene formats stored before the SceneDefinition schema
+# (e.g. {scene_id, title, narration, duration}) so video listing does not
+# fail with a 500 when older records exist in the database.
+def _coerce_scene_dict(s: Dict[str, Any]) -> Dict[str, Any]:
+    s = dict(s)
+    if "scene_number" not in s:
+        s["scene_number"] = int(s.get("scene_id") or 0)
+    if "section_type" not in s:
+        s["section_type"] = "DETAILED_EXPLANATION"
+    if "narration_text" not in s:
+        s["narration_text"] = s.get("narration") or ""
+    if "visual_type" not in s:
+        s["visual_type"] = "TEXT"
+    if "estimated_duration_seconds" not in s and s.get("duration") is not None:
+        try:
+            s["estimated_duration_seconds"] = float(s["duration"])
+            s.setdefault("start_time_seconds", 0.0)
+            s.setdefault("end_time_seconds", float(s["duration"]))
+        except (TypeError, ValueError):
+            pass
+    return s
+
+
 def serialize_video_render(v: Video, db: Optional[Session] = None) -> VideoRenderOut:
     topic = v.topic
     chapter = topic.chapter if topic else None
@@ -931,7 +954,7 @@ def serialize_video_render(v: Video, db: Optional[Session] = None) -> VideoRende
     captions_url = storage.get_url(v.captions_storage_key) if v.captions_storage_key else None
 
     scenes_raw = v.scenes_data or []
-    scenes = [SceneOut(**s) for s in scenes_raw] if scenes_raw else []
+    scenes = [SceneOut(**_coerce_scene_dict(s)) for s in scenes_raw] if scenes_raw else []
 
     captions_srt = None
     if v.captions_storage_key and hasattr(storage, "get_local_path"):

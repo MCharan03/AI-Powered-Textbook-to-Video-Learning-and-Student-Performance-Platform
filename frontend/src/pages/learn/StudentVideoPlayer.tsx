@@ -57,6 +57,9 @@ export const StudentVideoPlayer: React.FC<StudentVideoPlayerProps> = ({ onNaviga
             description: tv.description,
             learning_objective: tv.learning_objective,
             content_outline: tv.content_outline,
+            captions_url: tv.captions_url || null,
+            resume_position_seconds: tv.resume_position_seconds ?? null,
+            watch_percentage: tv.watch_percentage ?? null,
           }));
 
           if (mappedPlaylist.length > 0) {
@@ -148,11 +151,9 @@ export const StudentVideoPlayer: React.FC<StudentVideoPlayerProps> = ({ onNaviga
                     {currentVideo.learning_objective}
                   </p>
                 ) : (
-                  <ul style={{ paddingLeft: '20px', fontSize: '13px', color: '#475569', lineHeight: '22px' }}>
-                    <li>Understand core conceptual foundations of {currentVideo.title}.</li>
-                    <li>Analyze algorithmic structures and structural invariants.</li>
-                    <li>Apply textbook principles to worked problems and complexity analysis.</li>
-                  </ul>
+                  <p style={{ fontSize: '13px', color: '#475569', lineHeight: '22px' }}>
+                    Watch the full lesson to learn the core concepts of “{currentVideo.title}”. Your progress is saved automatically as you watch.
+                  </p>
                 )}
               </SurfacePanel>
             </div>
