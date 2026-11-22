@@ -345,6 +345,10 @@ class Video(Base):
     actual_duration_seconds = Column(Float, nullable=True)
     render_error = Column(Text, nullable=True)
     rendered_at = Column(DateTime, nullable=True)
+    # PHASE 3 (Video Studio): admin-requested regeneration feedback. Persisted so
+    # the requested changes are visible on the review screen and drive re-scripting.
+    regeneration_feedback = Column(Text, nullable=True)
+    regeneration_requested_at = Column(DateTime, nullable=True)
     scenes_data = Column(JSON, nullable=True)
     status = Column(String(50), default="REVIEW", nullable=False)
     created_at = Column(DateTime, default=utcnow, nullable=False)
@@ -787,6 +791,11 @@ class Textbook(Base):
     original_filename = Column(String(500), nullable=True)
     storage_key = Column(String(1000), nullable=True)
     status = Column(Enum(PipelineStatus), default=PipelineStatus.uploaded, nullable=False)
+    # PHASE 3 (Video Studio): "TEXTBOOK" (full textbook upload) or "CHAPTER"
+    # (single-chapter PDF processed as one chapter). Additive and backwards
+    # compatible: existing rows default to TEXTBOOK.
+    source_type = Column(String(20), default="TEXTBOOK", nullable=False)
+    chapter_number = Column(Integer, nullable=True)
 
     # Legacy fields
     filename = Column(String(500), nullable=True)
@@ -887,3 +896,34 @@ class SystemSettings(Base):
     mastery_threshold = Column(Float, default=80.0, nullable=False)
     adaptive_per_weak = Column(Integer, default=3, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+# ==================================================
+# VIDEO RENDERING JOBS (Real-Time Progress Tracking)
+# ==================================================
+class VideoRenderingJob(Base):
+    __tablename__ = "video_rendering_jobs"
+
+    id = Column(Integer, primary_key=True)
+    job_id = Column(String(100), unique=True, index=True, nullable=False)
+    video_id = Column(Integer, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False, index=True)
+    video_title = Column(String(500), nullable=True)
+    current_stage = Column(String(100), default="PREPARING_SCRIPT", nullable=False)
+    stage_number = Column(Integer, default=1, nullable=False)
+    stage_name = Column(String(200), default="Preparing script and scenes", nullable=False)
+    progress = Column(Float, default=0.0, nullable=False)
+    total_scenes = Column(Integer, default=0, nullable=False)
+    completed_scenes = Column(Integer, default=0, nullable=False)
+    current_scene = Column(Integer, default=0, nullable=False)
+    status = Column(String(50), default="PENDING", nullable=False)  # PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
+    started_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    elapsed_seconds = Column(Float, default=0.0, nullable=False)
+    estimated_remaining_seconds = Column(Float, nullable=True)
+    error_message = Column(Text, nullable=True)
+    is_cancelled = Column(Boolean, default=False, nullable=False)
+    cancellation_reason = Column(Text, nullable=True)
+    output_video_url = Column(String(1000), nullable=True)
+
+    video = orm_relationship("Video")

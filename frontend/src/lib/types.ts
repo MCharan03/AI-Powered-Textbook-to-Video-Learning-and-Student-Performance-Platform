@@ -197,6 +197,8 @@ export interface Textbook {
   progress?: number;
   stage_name?: string;
   error_message?: string;
+  source_type?: 'TEXTBOOK' | 'CHAPTER';
+  chapter_number?: number | null;
 }
 
 export interface PipelineStageStatus {
@@ -210,8 +212,15 @@ export interface PipelineStageStatus {
 export interface PipelineStatus {
   textbook_id: number;
   pipeline_status: 'pending' | 'running' | 'completed' | 'failed';
-  stages: PipelineStageStatus[];
+  /** Textbook status as returned by GET /admin/textbooks/{id}/status */
+  status?: string;
+  stage?: number;
+  current_stage?: string | null;
+  progress?: number;
+  error_message?: string;
   error?: string;
+  stages: PipelineStageStatus[];
+  stages_log?: Array<{ stage: number; name: string; status: string; timestamp?: string }>;
 }
 
 export interface Subtopic {
@@ -346,6 +355,8 @@ export interface ScriptSection {
   formula?: string;
   diagram_description?: string;
   animation_hint?: string;
+  speaker?: string;
+  example_origin?: 'textbook_direct' | 'generative_analogy' | 'generative_application' | null;
 }
 
 export interface ScriptQualityBreakdown {
@@ -372,7 +383,9 @@ export interface ScriptItem {
   source_page_end?: number;
   sections: ScriptSection[];
   narration_text?: string;
+  narration_style?: string;
   warnings: string[];
+  regeneration_feedback?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -581,6 +594,8 @@ export interface VideoRenderDetails {
   video_id: number;
   version_number: number;
   title: string;
+  textbook_id?: number | null;
+  textbook_title?: string | null;
   subject_id?: number;
   subject_name?: string;
   chapter_title?: string;
@@ -604,22 +619,28 @@ export interface VideoRenderDetails {
   thumbnail_url?: string;
   thumbnail_storage_key?: string;
   captions_storage_key?: string;
+  captions_url?: string;
   captions_srt?: string;
   scenes: SceneItem[];
   source_page_start?: number;
   source_page_end?: number;
   render_error?: string;
   job_id?: number;
+  video_plan_status?: string;
   rendered_at?: string;
   created_at?: string;
+  regeneration_feedback?: string | null;
+  regeneration_requested_at?: string | null;
 }
 
 export interface VideoGenerationStatus {
   video_id: number;
   video_title: string;
-  job_id?: number;
+  job_id?: number | string;
   job_status: string;
   current_stage: string;
+  stage_number?: number;
+  stage_name?: string;
   progress: number;
   render_status: string;
   video_status: string;
@@ -627,6 +648,77 @@ export interface VideoGenerationStatus {
   video_url?: string;
   thumbnail_url?: string;
   error_message?: string;
+  total_scenes?: number;
+  completed_scenes?: number;
+  current_scene?: number;
+  elapsed_seconds?: number;
+  estimated_remaining_seconds?: number;
+  updated_at?: string;
+  is_cancelled?: boolean;
+}
+
+export interface VideoRenderingJob {
+  id: number;
+  job_id: string;
+  video_id: number;
+  video_title?: string;
+  current_stage: string;
+  stage_number: number;
+  stage_name: string;
+  progress: number;
+  total_scenes: number;
+  completed_scenes: number;
+  current_scene: number;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  started_at?: string;
+  updated_at?: string;
+  completed_at?: string;
+  elapsed_seconds: number;
+  estimated_remaining_seconds?: number;
+  error_message?: string;
+  is_cancelled: boolean;
+  cancellation_reason?: string;
+  output_video_url?: string;
+}
+
+export interface CleanupPreview {
+  counts: {
+    video_plans: number;
+    unrendered_plans: number;
+    rendered_videos: number;
+    published_videos: number;
+    video_script_versions: number;
+    video_render_versions: number;
+    quizzes: number;
+    quiz_questions: number;
+    student_video_progress: number;
+    student_quiz_attempts: number;
+    generated_media_files: number;
+    generated_media_bytes: number;
+    generated_media_formatted_size: string;
+  };
+  preserved: {
+    original_textbook_pdfs: number;
+    textbooks: number;
+    subjects: number;
+    chapters: number;
+    topics: number;
+    subtopics: number;
+    users_total: number;
+    users_by_role: Record<string, number>;
+  };
+  sample_files_to_delete: string[];
+}
+
+export interface CleanupResult {
+  success: boolean;
+  database_backup_path: string;
+  deleted_records: Record<string, number>;
+  files_deleted_count: number;
+  files_deleted_bytes: number;
+  files_deleted_formatted_size: string;
+  duration_seconds: number;
+  timestamp: string;
 }
 
 // BUILD 07: INTERACTIVE QUIZZES & STUDENT MASTERY TYPES

@@ -1,6 +1,7 @@
 import io
 import os
 
+from tests.conftest import register_test_artifact
 from app.core.security import create_token
 from app.models.models import Textbook, VideoUnit, Quiz, PipelineStatus, ReviewStatus
 from app.services.pipeline_service import run_stages_1_to_5
@@ -233,6 +234,7 @@ def test_pre_rendered_media_asset_available(client):
     os.makedirs(static_dir, exist_ok=True)
     probe_name = "_delivery_probe.mp4"
     probe_path = os.path.join(static_dir, probe_name)
+    register_test_artifact(probe_path)
     with open(probe_path, "wb") as f:
         f.write(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 1200)
     try:
@@ -242,4 +244,12 @@ def test_pre_rendered_media_asset_available(client):
         assert len(res2.content) > 1000  # Valid payload delivered
     finally:
         if os.path.exists(probe_path):
-            os.remove(probe_path)
+            try:
+                os.remove(probe_path)
+            except OSError:
+                pass
+        try:
+            if os.path.exists(static_dir) and not os.listdir(static_dir):
+                os.rmdir(static_dir)
+        except OSError:
+            pass

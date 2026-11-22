@@ -16,7 +16,7 @@ from ..models.models import (
     Textbook, Chapter, Topic, Subtopic, Video, Quiz, Question,
     User, Student, Parent, Teacher, StudentParent, TeacherStudent,
     StudentSubject, Subject, ProcessingJob, SystemSettings,
-    PipelineStatus, ReviewStatus, Role, VideoStatus
+    PipelineStatus, ReviewStatus, Role, VideoStatus, VideoRenderingJob
 )
 from ..schemas.schemas import (
     TextbookOut, TextbookListItemOut, TextbookDetailOut,
@@ -35,10 +35,13 @@ from ..schemas.schemas import (
     SubtopicCreate, SubtopicUpdate,
     ChapterPatch, TopicPatch, SubtopicPatch,
     RegenerationRequest, RegenerationComparisonOut,
-    VideoPlanOut, VideoPlanPatch, VideoPlanRegenerationOut, VideoPlanGenerateRequest,
+    VideoPlanOut, VideoPlanPatch, VideoPlanCreate, VideoPlanRegenerationOut, VideoPlanGenerateRequest,
     ScriptOut, ScriptPatch, ScriptRegenerationPreview, ScriptGenerateRequest, ScriptSection,
     VideoRenderOut, VideoGenerationStatusOut, VideoGenerateRequest, VideoRegenerateRequest,
+    VideoRegenerationFeedbackRequest,
     VideoApproveRequest, VideoPublishRequest, SceneOut,
+    VideoRenderingJobOut, VideoRenderingJobCancelRequest, VideoRenderingJobCreateRequest,
+    CleanupExecuteRequest,
     AdminQuizOut, AdminQuestionOut, QuizGenerateRequest, QuizPatchRequest,
     QuestionPatchRequest, QuestionCreateRequest
 )
@@ -49,7 +52,7 @@ from ..services.pipeline_service import (
     approve_textbook_curriculum
 )
 from ..services.video_segmentation import VideoSegmentationService
-from ..services.script_generation import ScriptService, AIProviderUnavailableError
+from ..services.script_generation import ScriptService, AIProviderUnavailableError, GeminiGenerationError
 from ..services.video_rendering import VideoGenerationService, get_tts_engine
 from ..services.quiz_service import QuizService, QuizQuestionValidator
 
@@ -63,9 +66,19 @@ async def upload_textbook(
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
     subject_id: Optional[int] = Form(None),
+    # PHASE 3 (Video Studio): "TEXTBOOK" (default) or "CHAPTER" (single-chapter
+    # PDF processed as exactly one chapter). Additive form fields.
+    source_type: Optional[str] = Form("TEXTBOOK"),
+    chapter_number: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     admin: User = Depends(require_roles("admin"))
 ):
+    source_type_val = (source_type or "TEXTBOOK").upper()
+    if source_type_val not in ("TEXTBOOK", "CHAPTER"):
+        raise HTTPException(status_code=400, detail="source_type must be 'TEXTBOOK' or 'CHAPTER'")
+    if not title or not title.strip():
+        raise HTTPException(status_code=400, detail="A title is required")
+
     # MIME and Extension validation (SEC-FILE-001)
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported (CON-001, SEC-FILE-001)")
@@ -101,7 +114,9 @@ async def upload_textbook(
         uploaded_by=admin.id,
         status=PipelineStatus.uploaded,
         stage=0,
-        stages_log=[]
+        stages_log=[],
+        source_type=source_type_val,
+        chapter_number=chapter_number if source_type_val == "CHAPTER" else None
     )
     db.add(textbook)
     db.flush()
@@ -170,6 +185,8 @@ def list_textbooks(
             chapters_count=ch_count,
             topics_count=top_count,
             subtopics_count=sub_count,
+            source_type=tb.source_type or "TEXTBOOK",
+            chapter_number=tb.chapter_number,
             created_at=tb.created_at
         ))
     return results
@@ -215,6 +232,8 @@ def get_textbook(
         chapters_count=ch_count,
         topics_count=top_count,
         subtopics_count=sub_count,
+        source_type=tb.source_type or "TEXTBOOK",
+        chapter_number=tb.chapter_number,
         created_at=tb.created_at,
         stages_log=tb.stages_log or []
     )
@@ -623,6 +642,7 @@ def list_video_plans(
     topic_id: Optional[int] = None,
     chapter_id: Optional[int] = None,
     subject_id: Optional[int] = None,
+    textbook_id: Optional[int] = None,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
     admin: User = Depends(require_roles("admin"))
@@ -634,6 +654,12 @@ def list_video_plans(
         query = query.join(Topic, Video.topic_id == Topic.id).filter(Topic.chapter_id == chapter_id)
     if subject_id:
         query = query.join(Topic, Video.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).filter(Chapter.subject_id == subject_id)
+    if textbook_id:
+        query = (
+            query.join(Topic, Video.topic_id == Topic.id)
+            .join(Chapter, Topic.chapter_id == Chapter.id)
+            .filter(Chapter.textbook_id == textbook_id)
+        )
     if status:
         if status.upper() in ["APPROVED", "SCRIPT_APPROVED"]:
             query = query.filter(
@@ -658,6 +684,89 @@ def get_video_plan(
     if not video:
         raise HTTPException(status_code=404, detail="Video plan not found")
     return serialize_video_plan(video)
+
+
+# 4k2. POST /admin/topics/{topic_id}/video-plans (Admin-authored additional plan)
+@router.post("/topics/{topic_id}/video-plans", response_model=VideoPlanOut, status_code=201)
+def create_video_plan(
+    topic_id: int,
+    payload: VideoPlanCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    topic = db.get(Topic, topic_id)
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    if not payload.title or not payload.title.strip():
+        raise HTTPException(status_code=400, detail="Video title cannot be empty")
+    if not payload.content_outline:
+        raise HTTPException(status_code=400, detail="Content outline cannot be empty")
+    if payload.estimated_duration_seconds is not None and payload.estimated_duration_seconds <= 0:
+        raise HTTPException(status_code=400, detail="Duration must be positive")
+    if payload.duration_seconds and payload.duration_seconds <= 0:
+        raise HTTPException(status_code=400, detail="Duration must be positive")
+    if (
+        payload.source_start_page is not None
+        and payload.source_end_page is not None
+        and payload.source_end_page < payload.source_start_page
+    ):
+        raise HTTPException(status_code=400, detail="Source end page cannot precede start page")
+
+    chapter = topic.chapter
+    next_seq = payload.sequence_number
+    if next_seq is None:
+        existing = db.query(Video).filter(Video.topic_id == topic_id).all()
+        next_seq = (max((v.sequence_number or 0) for v in existing) + 1) if existing else 1
+
+    duration = payload.estimated_duration_seconds or payload.duration_seconds or 330
+    video = Video(
+        topic_id=topic.id,
+        textbook_id=chapter.textbook_id if chapter else None,
+        title=payload.title.strip(),
+        description=payload.description,
+        sequence_number=next_seq,
+        duration_seconds=duration,
+        estimated_duration_seconds=duration,
+        source_start_page=payload.source_start_page if payload.source_start_page is not None else topic.source_start_page,
+        source_end_page=payload.source_end_page if payload.source_end_page is not None else topic.source_end_page,
+        learning_objective=payload.learning_objective,
+        content_outline=payload.content_outline,
+        status="REVIEW",
+        render_status="NOT_STARTED",
+    )
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+    return serialize_video_plan(video)
+
+
+# 4k3. DELETE /admin/video-plans/{id} (Remove an unrendered plan)
+@router.delete("/video-plans/{id}")
+def delete_video_plan(
+    id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    video = db.get(Video, id)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video plan not found")
+
+    # Data safety: never delete scripts or rendered/published media through the
+    # plan editor. Rendered content must be reviewed and archived deliberately.
+    if (video.render_status or "").upper() == "RENDERED" or (video.video_storage_key or ""):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a rendered video plan. Remove it only before rendering.",
+        )
+    if (video.status or "").upper() in ("APPROVED", "PUBLISHED"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete an approved/published video plan. It must be unapproved first.",
+        )
+
+    db.delete(video)
+    db.commit()
+    return {"message": "Video plan deleted", "id": id}
 
 
 # 4l. PATCH /admin/video-plans/{id} (Edit Video Plan)
@@ -764,7 +873,10 @@ def preview_regenerate_video_plan(
 
 def serialize_script(v: Video) -> ScriptOut:
     if v.script_data:
-        return ScriptOut(**v.script_data)
+        data = dict(v.script_data)
+        if not data.get("regeneration_feedback") and v.regeneration_feedback:
+            data["regeneration_feedback"] = v.regeneration_feedback
+        return ScriptOut(**data)
     return ScriptOut(
         id=v.id,
         video_id=v.id,
@@ -778,6 +890,7 @@ def serialize_script(v: Video) -> ScriptOut:
         estimated_duration_seconds=v.estimated_duration_seconds or 330,
         source_page_start=v.source_start_page,
         source_page_end=v.source_end_page,
+        regeneration_feedback=v.regeneration_feedback,
         sections=[
             ScriptSection(
                 section_id=1,
@@ -805,11 +918,16 @@ def generate_video_script(
             db=db,
             video_id=id,
             force_regenerate=req.force_regenerate if req else False,
-            engine_name=req.engine if req else None
+            engine_name=req.engine if req else None,
+            narration_style=req.narration_style if req else None
         )
         return ScriptOut(**res)
     except HTTPException:
         raise
+    except AIProviderUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except GeminiGenerationError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -946,6 +1064,9 @@ def serialize_video_render(v: Video, db: Optional[Session] = None) -> VideoRende
     topic = v.topic
     chapter = topic.chapter if topic else None
     subject = chapter.subject if chapter else None
+    textbook = chapter.textbook if chapter else (v.textbook if hasattr(v, "textbook") else None)
+    textbook_title = textbook.title if textbook else None
+    textbook_id = textbook.id if textbook else v.textbook_id
 
     storage = get_storage()
     video_url = storage.get_url(v.video_storage_key) if v.video_storage_key else (v.storage_key or "")
@@ -981,6 +1102,8 @@ def serialize_video_render(v: Video, db: Optional[Session] = None) -> VideoRende
         video_id=v.id,
         version_number=latest_ver,
         title=v.title,
+        textbook_id=textbook_id,
+        textbook_title=textbook_title,
         subject_id=subject.id if subject else None,
         subject_name=subject.name if subject else None,
         chapter_title=chapter.title if chapter else None,
@@ -1013,7 +1136,9 @@ def serialize_video_render(v: Video, db: Optional[Session] = None) -> VideoRende
         job_id=job_id,
         video_plan_status="APPROVED" if (v.status in ["APPROVED", "PUBLISHED", "approved", "published"] or v.script_status is not None) else (v.status or "REVIEW"),
         rendered_at=v.rendered_at,
-        created_at=v.created_at
+        created_at=v.created_at,
+        regeneration_feedback=v.regeneration_feedback,
+        regeneration_requested_at=v.regeneration_requested_at
     )
 
 
@@ -1022,23 +1147,121 @@ def serialize_video_render(v: Video, db: Optional[Session] = None) -> VideoRende
 def generate_video(
     id: int,
     req: Optional[VideoGenerateRequest] = None,
+    sync: bool = Query(True, description="Synchronous execution (default for tests/scripts). Set false for background async."),
     db: Session = Depends(get_db),
     admin: User = Depends(require_roles("admin"))
 ):
     service = VideoGenerationService()
     try:
-        updated_video = service.start_video_generation(
-            video_id=id,
-            db=db,
-            force=req.force if req else False,
-            tts_engine_name=req.tts_engine if req else None,
-            voice=req.voice if req else None
-        )
-        return serialize_video_render(updated_video, db)
+        if sync:
+            updated_video = service.start_video_generation(
+                video_id=id,
+                db=db,
+                force=req.force if req else False,
+                tts_engine_name=req.tts_engine if req else None,
+                voice=req.voice if req else None
+            )
+            return serialize_video_render(updated_video, db)
+        else:
+            job = service.queue_video_rendering(
+                video_id=id,
+                db=db,
+                force=req.force if req else False,
+                tts_engine_name=req.tts_engine if req else None,
+                voice=req.voice if req else None
+            )
+            video = db.get(Video, id)
+            return serialize_video_render(video, db)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
+
+
+# 6a2. POST /admin/video-rendering/jobs (Queue or Start Background Rendering Job)
+@router.post("/video-rendering/jobs", response_model=VideoRenderingJobOut)
+def create_video_rendering_job(
+    req: VideoRenderingJobCreateRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    service = VideoGenerationService()
+    try:
+        job = service.queue_video_rendering(
+            video_id=req.video_id,
+            db=db,
+            force=req.force,
+            tts_engine_name=req.tts_engine,
+            voice=req.voice
+        )
+        return job
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to queue video rendering: {str(e)}")
+
+
+# 6a3. GET /admin/video-rendering/jobs/{job_id} (Detailed Real-Time Progress for Job)
+@router.get("/video-rendering/jobs/{job_id}", response_model=VideoRenderingJobOut)
+def get_video_rendering_job_endpoint(
+    job_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    service = VideoGenerationService()
+    job = service.get_rendering_job(job_id, db)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Rendering job '{job_id}' not found")
+    return job
+
+
+# 6a4. GET /admin/video-rendering/jobs (List Recent / Active Jobs)
+@router.get("/video-rendering/jobs", response_model=List[VideoRenderingJobOut])
+def list_video_rendering_jobs_endpoint(
+    video_id: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    service = VideoGenerationService()
+    return service.list_rendering_jobs(video_id=video_id, status=status, limit=limit, db=db)
+
+
+# 6a5. POST /admin/video-rendering/jobs/{job_id}/cancel (Cancel Active Job)
+@router.post("/video-rendering/jobs/{job_id}/cancel", response_model=VideoRenderingJobOut)
+def cancel_video_rendering_job_endpoint(
+    job_id: str,
+    req: Optional[VideoRenderingJobCancelRequest] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    service = VideoGenerationService()
+    reason = req.reason if req and req.reason else "Cancelled by administrator"
+    try:
+        job = service.cancel_rendering_job(job_id, db, reason=reason)
+        return job
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cancel job: {str(e)}")
+
+
+# 6a6. POST /admin/video-rendering/jobs/{job_id}/retry (Retry Failed Job)
+@router.post("/video-rendering/jobs/{job_id}/retry", response_model=VideoRenderingJobOut)
+def retry_video_rendering_job_endpoint(
+    job_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    service = VideoGenerationService()
+    try:
+        job = service.retry_rendering_job(job_id, db)
+        return job
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retry job: {str(e)}")
 
 
 # 6b. GET /admin/videos/{id}/generation-status
@@ -1052,6 +1275,10 @@ def get_video_generation_status(
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
 
+    vjob = db.query(VideoRenderingJob).filter(
+        VideoRenderingJob.video_id == video.id
+    ).order_by(VideoRenderingJob.id.desc()).first()
+
     job = db.query(ProcessingJob).filter(
         ProcessingJob.video_id == video.id,
         ProcessingJob.job_type == "VIDEO_GENERATION"
@@ -1061,13 +1288,38 @@ def get_video_generation_status(
     video_url = storage.get_url(video.video_storage_key) if video.video_storage_key else None
     thumb_url = storage.get_url(video.thumbnail_storage_key) if video.thumbnail_storage_key else None
 
+    if vjob:
+        return VideoGenerationStatusOut(
+            video_id=video.id,
+            video_title=video.title,
+            job_id=vjob.job_id,
+            job_status=vjob.status,
+            current_stage=vjob.current_stage,
+            stage_number=vjob.stage_number,
+            stage_name=vjob.stage_name,
+            progress=vjob.progress,
+            render_status=video.render_status or "NOT_STARTED",
+            video_status=video.status or "REVIEW",
+            actual_duration_seconds=video.actual_duration_seconds,
+            video_url=video_url,
+            thumbnail_url=thumb_url,
+            error_message=vjob.error_message if vjob.status == "FAILED" else video.render_error,
+            total_scenes=vjob.total_scenes,
+            completed_scenes=vjob.completed_scenes,
+            current_scene=vjob.current_scene,
+            elapsed_seconds=vjob.elapsed_seconds,
+            estimated_remaining_seconds=vjob.estimated_remaining_seconds,
+            updated_at=vjob.updated_at,
+            is_cancelled=vjob.is_cancelled
+        )
+
     return VideoGenerationStatusOut(
         video_id=video.id,
         video_title=video.title,
         job_id=job.id if job else None,
         job_status=job.status if job else "NOT_STARTED",
         current_stage=job.current_stage if job else (video.render_status or "NOT_STARTED"),
-        progress=job.progress if job else 0.0,
+        progress=job.progress if job else (100.0 if video.render_status == "RENDERED" else 0.0),
         render_status=video.render_status or "NOT_STARTED",
         video_status=video.status or "REVIEW",
         actual_duration_seconds=video.actual_duration_seconds,
@@ -1147,12 +1399,47 @@ def publish_video(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# 6f2. POST /admin/videos/{id}/request-regeneration
+# Admin requests changes with a mandatory feedback reason. The video is pulled
+# out of approval back into review, the script is marked for revision, and the
+# feedback is persisted so the Scripts step can show exactly what must change.
+# The rendered MP4 is preserved for comparison/preview.
+@router.post("/videos/{id}/request-regeneration", response_model=VideoRenderOut)
+def request_video_regeneration(
+    id: int,
+    req: VideoRegenerationFeedbackRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    video = db.get(Video, id)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    feedback = (req.feedback or "").strip()
+    if not feedback:
+        raise HTTPException(status_code=400, detail="A feedback reason is required to request regeneration")
+    if len(feedback) > 2000:
+        raise HTTPException(status_code=400, detail="Feedback must be 2000 characters or fewer")
+
+    video.regeneration_feedback = feedback
+    video.regeneration_requested_at = datetime.now(timezone.utc)
+    # Keep the PLAN approved so the script can be regenerated (script generation
+    # requires an APPROVED/PUBLISHED plan). Publication stays blocked because
+    # publish_video also requires script_status == SCRIPT_APPROVED. The existing
+    # MP4 is preserved for comparison but is no longer approved/reviewable.
+    video.status = "APPROVED"
+    video.script_status = "NEEDS_REVIEW"
+    db.commit()
+    db.refresh(video)
+    return serialize_video_render(video, db)
+
+
 # 6g. GET /admin/videos (List All Rendered/Review Videos with Filter Hierarchy)
 @router.get("/videos", response_model=List[VideoRenderOut])
 def list_admin_videos(
     topic_id: Optional[int] = None,
     chapter_id: Optional[int] = None,
     subject_id: Optional[int] = None,
+    textbook_id: Optional[int] = None,
     render_status: Optional[str] = None,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -1165,6 +1452,12 @@ def list_admin_videos(
         query = query.join(Topic, Video.topic_id == Topic.id).filter(Topic.chapter_id == chapter_id)
     if subject_id:
         query = query.join(Topic, Video.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).filter(Chapter.subject_id == subject_id)
+    if textbook_id:
+        query = (
+            query.join(Topic, Video.topic_id == Topic.id)
+            .join(Chapter, Topic.chapter_id == Chapter.id)
+            .filter(Chapter.textbook_id == textbook_id)
+        )
     if render_status:
         query = query.filter(Video.render_status.ilike(render_status))
     if status:
@@ -1424,6 +1717,9 @@ def approve_item(
         if payload.decision == "approve":
             service = VideoGenerationService()
             try:
+                # Explicit two-stage gate: video is approved, then published.
+                # Publishing a merely rendered (REVIEW) video is never allowed.
+                service.approve_video(v.id, db)
                 service.publish_video(v.id, db)
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
@@ -3644,5 +3940,45 @@ def add_admin_question(
         order_index=q.order_index,
         created_at=q.created_at
     )
+
+
+# 8a. GET /admin/maintenance/cleanup-preview (Dry-run cleanup inspection)
+@router.get("/maintenance/cleanup-preview")
+def get_cleanup_preview_endpoint(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    """
+    Returns dry-run preview of generated educational content to clean up,
+    along with preserved core records and exact file counts/sizes.
+    """
+    from ..services.content_cleanup_service import preview_cleanup
+    return preview_cleanup(db)
+
+
+# 8b. POST /admin/maintenance/cleanup-execute (Transactional Content Cleanup)
+@router.post("/maintenance/cleanup-execute")
+def execute_cleanup_endpoint(
+    req: CleanupExecuteRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    """
+    Executes safe transactional deletion of previously generated educational content.
+    Requires explicit 'confirm: true'. Never deletes original textbooks, curriculum,
+    or user accounts.
+    """
+    if not req.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Cleanup execution requires explicit administrator confirmation. Set 'confirm: true' to execute."
+        )
+    from ..services.content_cleanup_service import execute_cleanup
+    try:
+        res = execute_cleanup(db, create_backup=req.create_backup)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cleanup execution failed: {str(e)}")
+
 
 

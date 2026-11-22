@@ -1,0 +1,51 @@
+{
+  "timestamp": "2026-11-20T16:51:44.189079+00:00",
+  "workflow_tests": {},
+  "videos_generated": [
+    {
+      "video_id": 173,
+      "title": "Module 1: Principles of Work and Mechanical Energy",
+      "source": "complete_science_textbook.pdf (Chapter 7)",
+      "mp4_path": "/Users/pushkarbhuyar/Documents/AI-Powered-Textbook-to-Video-Learning-and-Student-Performance-Platform/backend/uploads/videos/173/video_173_v1.mp4",
+      "duration": 477.79,
+      "url": "/assets/videos/173/video_173_v1.mp4"
+    },
+    {
+      "video_id": 192,
+      "title": "When is work done equal to zero?",
+      "source": "Work_Energy_Vdo_test.pdf (Individual Chapter Upload)",
+      "mp4_path": "/Users/pushkarbhuyar/Documents/AI-Powered-Textbook-to-Video-Learning-and-Student-Performance-Platform/backend/uploads/videos/192/video_192_v1.mp4",
+      "duration": 458.13,
+      "url": "/assets/videos/192/final_output.mp4"
+    }
+  ],
+  "quality_evaluations": [
+    {
+      "video_id": 173,
+      "title": "Module 1: Principles of Work and Mechanical Energy",
+      "actual_duration_seconds": 477.79,
+      "file_size_bytes": 10948341,
+      "video_stream": "Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 1280x720, 63 kb/s, 24 fps, 24 tbr, 12288 tbn (default)",
+      "audio_stream": "Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 124 kb/s (default)",
+      "max_volume": "-17.0 dB",
+      "mean_volume": "-25.8 dB",
+      "has_captions": false,
+      "frame_sample_path": "uploads/qa_frames/video_173/scene_frame_mid.png"
+    },
+    {
+      "video_id": 192,
+      "title": "When is work done equal to zero?",
+      "actual_duration_seconds": 458.13,
+      "file_size_bytes": 10320382,
+      "video_stream": "Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 1280x720, 60 kb/s, 24 fps, 24 tbr, 12288 tbn (default)",
+      "audio_stream": "Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 124 kb/s (default)",
+      "max_volume": "-17.0 dB",
+      "mean_volume": "-25.8 dB",
+      "has_captions": false,
+      "frame_sample_path": "uploads/qa_frames/video_192/scene_frame_mid.png"
+    }
+  ],
+  "publication_gates": {},
+  "student_access": {},
+  "defects_and_observations": []
+}

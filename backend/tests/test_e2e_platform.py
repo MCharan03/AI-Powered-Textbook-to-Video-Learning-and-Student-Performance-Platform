@@ -159,6 +159,13 @@ def test_e2e_pipeline_review_and_learning_lifecycle(client, db_session):
     assert res_render.status_code == 200, res_render.text
     assert res_render.json()["render_status"] == "RENDERED"
 
+    # Explicit admin approval is required before publication
+    res_appr_v = client.post(
+        f"/admin/videos/{video_id}/approve",
+        headers=admin_headers
+    )
+    assert res_appr_v.status_code == 200, res_appr_v.text
+
     res_pub_v = client.post(
         f"/admin/videos/{video_id}/publish",
         headers=admin_headers

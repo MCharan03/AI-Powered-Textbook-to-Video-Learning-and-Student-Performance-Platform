@@ -23,8 +23,11 @@ import hashlib
 import asyncio
 import tempfile
 import subprocess
+import threading
+import uuid
+import time
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Callable, Union
 from abc import ABC, abstractmethod
 
 import httpx
@@ -38,8 +41,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app.core.config import settings
 from app.core.storage import get_storage
+from app.core.database import SessionLocal
 from app.models.models import (
-    Video, VideoScriptVersion, VideoRenderVersion, ProcessingJob
+    Video, VideoScriptVersion, VideoRenderVersion, ProcessingJob, VideoRenderingJob
 )
 
 try:
@@ -51,6 +55,14 @@ except Exception:
 
 def utcnow():
     return datetime.now(timezone.utc)
+
+
+def normalize_datetime(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 # ==============================================================================
@@ -87,7 +99,7 @@ class NaturalSpeechFormatter:
     """
     Preprocesses raw educational scripts for natural conversational narration.
     Implements natural pauses, human-like cadence, and clear pronunciation of
-    technical notations (e.g. arr[2] -> arr at index 2, O(1) -> O of 1)
+    technical notations, mathematical expressions, formulas, and SI units
     without modifying underlying educational facts.
     """
 
@@ -115,18 +127,108 @@ class NaturalSpeechFormatter:
         t = re.sub(r"Address\(arr\[i\]\) = Base \+ \(i \* size\)", "Address of arr at index i equals Base plus index times size", t)
         t = re.sub(r"Address\(arr\[i\]\) = Base_Address \+ \(i \* Element_Size\)", "Address of arr at index i equals base address plus i times element size", t)
 
-        # 5. Clean markdown emphasis syntax for speech synthesis
-        t = t.replace("**", "").replace("`", "")
+        # 5. SI Units normalization (when preceded by a number)
+        # Acceleration / Speed
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:m/s\^2|m/s²)\b", r"\1 meters per second squared", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:km/h|km/hr)\b", r"\1 kilometers per hour", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*m/s\b", r"\1 meters per second", t)
 
-        # 6. Natural conversational rhythm padding
-        t = t.replace("  ", " ").strip()
+        # Mass & Distance
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*kg\b", r"\1 kilograms", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*mg\b", r"\1 milligrams", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*cm\b", r"\1 centimeters", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*mm\b", r"\1 millimeters", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*km\b", r"\1 kilometers", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*m\b", r"\1 meters", t)
+
+        # Time
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:sec|seconds?)\b", r"\1 seconds", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*ms\b", r"\1 milliseconds", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*s\b", r"\1 seconds", t)
+
+        # Frequency
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*GHz\b", r"\1 gigahertz", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*MHz\b", r"\1 megahertz", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*kHz\b", r"\1 kilohertz", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*Hz\b", r"\1 hertz", t)
+
+        # Force, Work & Energy, Power
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*kJ\b", r"\1 kilojoules", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*J\b", r"\1 Joules", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*N\b", r"\1 Newtons", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*kW\b", r"\1 kilowatts", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*MW\b", r"\1 megawatts", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*W\b", r"\1 Watts", t)
+
+        # Electricity
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*mV\b", r"\1 millivolts", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*V\b", r"\1 Volts", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*mA\b", r"\1 milliamperes", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*A\b", r"\1 Amperes", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*kΩ\b", r"\1 kilo-ohms", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:Ω|ohms?)\b", r"\1 ohms", t)
+
+        # Pressure & Temperature
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*kPa\b", r"\1 kilopascals", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*Pa\b", r"\1 Pascals", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:°C|deg C|degrees C)\b", r"\1 degrees Celsius", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:°F|deg F|degrees F)\b", r"\1 degrees Fahrenheit", t)
+        t = re.sub(r"(\d+(?:\.\d+)?)\s*K\b", r"\1 Kelvin", t)
+
+        # 6. Mathematical Expressions, Formulas and Operators
+        t = t.replace(r"\approx", "approximately equals").replace("≈", "approximately equals")
+        t = t.replace(r"\neq", "does not equal").replace("≠", "does not equal")
+        t = t.replace(r"\leq", "is less than or equal to").replace("≤", "is less than or equal to")
+        t = t.replace(r"\geq", "is greater than or equal to").replace("≥", "is greater than or equal to")
+        t = t.replace(r"\pm", "plus or minus").replace("±", "plus or minus")
+        t = t.replace(r"\times", "times").replace("×", "times")
+        t = t.replace(r"\div", "divided by").replace("÷", "divided by")
+        t = t.replace(r"\infty", "infinity").replace("∞", "infinity")
+        t = t.replace(r"\sum", "sum of").replace("∑", "sum of")
+        t = t.replace(r"\int", "integral of").replace("∫", "integral of")
+
+        # Greek Symbols
+        greek_map = {
+            r"\theta": "theta", "θ": "theta",
+            r"\pi": "pi", "π": "pi",
+            r"\alpha": "alpha", "α": "alpha",
+            r"\beta": "beta", "β": "beta",
+            r"\gamma": "gamma", "γ": "gamma",
+            r"\lambda": "lambda", "λ": "lambda",
+            r"\Delta": "delta", "Δ": "delta",
+            r"\mu": "micro", "μ": "micro",
+            r"\sigma": "sigma", "σ": "sigma",
+            r"\omega": "omega", "ω": "omega"
+        }
+        for g_k, g_v in greek_map.items():
+            t = t.replace(g_k, g_v)
+
+        # Powers and roots
+        t = re.sub(r"\\sqrt\{([^{}]+)\}", r"square root of \1", t)
+        t = re.sub(r"\b([a-zA-Z0-9]+)\^2\b", r"\1 squared", t)
+        t = re.sub(r"\b([a-zA-Z0-9]+)\^3\b", r"\1 cubed", t)
+        t = re.sub(r"\b([a-zA-Z0-9]+)\^([a-zA-Z0-9]+)\b", r"\1 to the power of \2", t)
+
+        # Function calls
+        t = re.sub(r"\bf\(([a-zA-Z0-9]+)\)", r"f of \1", t)
+        t = re.sub(r"\blog_2\(([a-zA-Z0-9]+)\)", r"log base 2 of \1", t)
+        t = re.sub(r"\blog_2", "log base 2", t)
+
+        # 7. Clean LaTeX and Markdown syntax
+        t = t.replace("$$", " ").replace("$", " ")
+        t = t.replace(r"\(", " ").replace(r"\)", " ")
+        t = t.replace("**", "").replace("`", "")
+        t = re.sub(r"^\s*#+\s*", "", t, flags=re.MULTILINE)
+
+        # 8. Natural conversational rhythm padding
+        t = re.sub(r"\s+", " ", t).strip()
         return t
 
 
 class TTSAudioCache:
     """
     Disk-backed audio cache for synthesized speech segments.
-    Keyed by: script_version, scene_id, provider, voice, speed, and formatted text.
+    Keyed by: script_version, scene_id, provider, model, voice, language, speed, and formatted text.
     Reuses existing audio when narration and voice configuration are unchanged.
     """
 
@@ -134,8 +236,18 @@ class TTSAudioCache:
         self.cache_dir = cache_dir or os.path.join(getattr(settings, "upload_dir", "uploads"), "cache", "audio")
         os.makedirs(self.cache_dir, exist_ok=True)
 
-    def get_key(self, script_version: int, scene_id: int, provider: str, voice: str, speed: float, text: str) -> str:
-        raw = f"{script_version}_{scene_id}_{provider}_{voice}_{speed:.2f}_{text.strip()}"
+    def get_key(
+        self,
+        script_version: int,
+        scene_id: int,
+        provider: str,
+        voice: str,
+        speed: float,
+        text: str,
+        model: str = "",
+        language: str = ""
+    ) -> str:
+        raw = f"{script_version}_{scene_id}_{provider}_{model}_{voice}_{language}_{speed:.2f}_{text.strip()}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def get(self, key: str) -> Optional[TTSResult]:
@@ -159,7 +271,7 @@ class TTSAudioCache:
                 return None
         return None
 
-    def put(self, key: str, result: TTSResult) -> None:
+    def put(self, key: str, result: TTSResult, model: str = "", language: str = "") -> None:
         try:
             meta_file = os.path.join(self.cache_dir, f"{key}.json")
             wav_file = os.path.join(self.cache_dir, f"{key}.wav")
@@ -170,6 +282,8 @@ class TTSAudioCache:
                     "duration_seconds": result.duration_seconds,
                     "engine": result.engine,
                     "voice": result.voice,
+                    "model": model,
+                    "language": language,
                     "is_development": result.is_development
                 }, mf)
         except Exception:
@@ -361,14 +475,15 @@ class LocalTTSProvider(TTSProvider):
                         audio_bytes = f.read()
                     with wave.open(wav_path, "rb") as wf:
                         duration = wf.getnframes() / float(wf.getframerate())
-                    return TTSResult(
-                        audio_bytes=audio_bytes,
-                        duration_seconds=round(duration, 2),
-                        format="wav",
-                        engine="local_fallback",
-                        voice=voice or "Samantha",
-                        is_development=True
-                    )
+                    if duration > 0.05 and len(audio_bytes) > 500:
+                        return TTSResult(
+                            audio_bytes=audio_bytes,
+                            duration_seconds=round(duration, 2),
+                            format="wav",
+                            engine="local_fallback",
+                            voice=voice or "Samantha",
+                            is_development=True
+                        )
             except Exception:
                 pass
 
@@ -433,11 +548,569 @@ class DeterministicTTSProvider(TTSProvider):
         )
 
 
+class GoogleGeminiTTSProvider(TTSProvider):
+    """
+    Production Google Gemini TTS Provider for Phase 2B-1.
+    Integrates Gemini TTS (primary: gemini-3.8-flash-tts, cost-efficient: gemini-3.8-flash-lite-tts)
+    using the official Google Gen AI SDK on Gemini Enterprise Agent Platform.
+
+    Authentication & Client:
+    - Enterprise Client: enterprise=True, project=<GOOGLE_CLOUD_PROJECT>, location=<GOOGLE_CLOUD_LOCATION>
+    - Application Default Credentials (ADC) - strictly never passes AI Studio API key.
+    - Diagnostics distinguishing project, ADC, IAM permissions, API status, model/location, schema, rate limits.
+    - Full support for single-teacher voice and multi-speaker teacher-student dialogue.
+    """
+
+    _mock_client: Optional[Any] = None
+
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        location: Optional[str] = None,
+        language_code: Optional[str] = None,
+        teacher_voice: Optional[str] = None,
+        student_voice: Optional[str] = None,
+        project: Optional[str] = None,
+        timeout_seconds: Optional[int] = None,
+        max_retries: Optional[int] = None,
+        ffmpeg_exe: str = DEFAULT_FFMPEG_EXE,
+        strict: bool = True
+    ):
+        self.model = model or getattr(settings, "gemini_tts_model", "gemini-3.8-flash-tts")
+        self.location = (
+            location
+            or getattr(settings, "gemini_tts_location", None)
+            or getattr(settings, "google_cloud_location", None)
+            or os.environ.get("GOOGLE_CLOUD_LOCATION")
+            or "global"
+        )
+        self.language_code = language_code or getattr(settings, "gemini_tts_language", "en-IN")
+        self.teacher_voice = teacher_voice or getattr(settings, "gemini_tts_teacher_voice", "Aoede")
+        self.student_voice = student_voice or getattr(settings, "gemini_tts_student_voice", "Puck")
+        self.project = project or getattr(settings, "google_cloud_project", None) or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        self.timeout_seconds = timeout_seconds or getattr(settings, "gemini_tts_timeout_seconds", 60)
+        self.max_retries = max_retries or getattr(settings, "gemini_tts_max_retries", 3)
+        self.ffmpeg_exe = ffmpeg_exe
+        self.strict = strict
+        self.engine = "gemini_tts"
+        self.is_development = False
+        self._client = None
+
+    @classmethod
+    def set_mock_client(cls, mock_client: Any) -> None:
+        """Injects a mock client for testing without external API calls."""
+        cls._mock_client = mock_client
+
+    @classmethod
+    def reset_mock_client(cls) -> None:
+        """Clears any injected mock client."""
+        cls._mock_client = None
+
+    @classmethod
+    def classify_error(
+        cls,
+        e: Union[Exception, str],
+        project: Optional[str] = None,
+        model: str = "gemini-3.8-flash-tts",
+        location: str = "global"
+    ) -> Tuple[str, str]:
+        """
+        Classifies errors into standard diagnostic categories with actionable messages.
+        Ensures credentials (API keys, tokens) are never included in output.
+        """
+        err_str = str(e) if isinstance(e, Exception) else str(e)
+        err_type = type(e).__name__ if isinstance(e, Exception) else "Error"
+
+        # 1. Missing ADC credentials
+        if (
+            "DefaultCredentialsError" in err_type
+            or "defaultcredentialserror" in err_str.lower()
+            or "credentials were not found" in err_str.lower()
+            or "could not automatically determine credentials" in err_str.lower()
+            or "no credentials" in err_str.lower()
+        ):
+            return (
+                "MISSING_ADC_CREDENTIALS",
+                "Google Cloud Application Default Credentials (ADC) not found. "
+                "Run 'gcloud auth application-default login' or configure GOOGLE_APPLICATION_CREDENTIALS pointing to a valid service account JSON key file."
+            )
+
+        # 2. Rate limiting and transient service errors (503, 429)
+        if any(term in err_str for term in [
+            "RESOURCE_EXHAUSTED",
+            "429",
+            "quota",
+            "Rate limit",
+            "503",
+            "UNAVAILABLE",
+            "Service Unavailable",
+            "deadline",
+            "timeout",
+            "high demand"
+        ]):
+            return (
+                "RATE_LIMITING_OR_TRANSIENT_ERROR",
+                f"Transient service error or rate limit reached: {err_str}."
+            )
+
+        # 3. API not enabled
+        if any(term in err_str for term in [
+            "SERVICE_DISABLED",
+            "has not been used in project",
+            "has not enabled the API",
+            "activation is pending",
+            "serviceusage.services.use",
+            "aiplatform.googleapis.com not enabled",
+            "API [aiplatform.googleapis.com] not enabled"
+        ]):
+            return (
+                "API_NOT_ENABLED",
+                f"Vertex AI API (aiplatform.googleapis.com) is not enabled on project '{project or 'unconfigured'}'. "
+                f"Enable it via Google Cloud Console or run 'gcloud services enable aiplatform.googleapis.com --project {project or 'PROJECT_ID'}'."
+            )
+
+        # 4. Insufficient IAM permissions
+        if any(term in err_str for term in [
+            "PERMISSION_DENIED",
+            "403",
+            "does not have permission",
+            "iam.serviceAccounts.actAs",
+            "roles/aiplatform.user",
+            "endpoints.predict denied",
+            "Permission denied on resource",
+            "Forbidden"
+        ]):
+            return (
+                "INSUFFICIENT_IAM_PERMISSIONS",
+                f"Insufficient IAM permissions on Google Cloud project '{project or 'unconfigured'}'. "
+                f"Ensure the service account or authenticated user has the 'Vertex AI User' role (roles/aiplatform.user)."
+            )
+
+        # 5. Model or location unavailable
+        if any(term in err_str for term in [
+            "NOT_FOUND",
+            "404",
+            "Publisher Model",
+            "not found in location",
+            "is not supported in location",
+            "Endpoint not found",
+            "Resource not found"
+        ]) and ("model" in err_str.lower() or "location" in err_str.lower() or "not found" in err_str.lower()):
+            return (
+                "MODEL_OR_LOCATION_UNAVAILABLE",
+                f"Model '{model}' is not available in location '{location}'. "
+                f"Verify that the model ID is correct and supported in this Google Cloud region."
+            )
+
+        # 6. Invalid request schema
+        if any(term in err_str for term in [
+            "INVALID_ARGUMENT",
+            "400",
+            "Unknown name",
+            "Invalid JSON payload",
+            "Cannot find field",
+            "validation error",
+            "Malformed request",
+            "speechConfig"
+        ]):
+            return (
+                "INVALID_REQUEST_SCHEMA",
+                f"Invalid request schema or configuration payload: {err_str}. "
+                "Ensure speech_config and parameters adhere to Gemini 3.8 TTS requirements."
+            )
+
+        # 7. Missing project configuration
+        if not project or str(project).strip() in ("", "None", "undefined"):
+            return (
+                "MISSING_PROJECT_CONFIGURATION",
+                "Google Cloud Project is not configured. Please set GOOGLE_CLOUD_PROJECT in your environment or backend/.env."
+            )
+
+        return (
+            "SERVICE_ERROR",
+            f"Gemini TTS synthesis error: {err_str}"
+        )
+
+    @classmethod
+    def validate_configuration(cls) -> Tuple[bool, str, Optional[str]]:
+        """
+        Validates configuration and authentication prerequisites before synthesis.
+        Returns: (is_ready: bool, message: str, diagnostic_category: Optional[str])
+        """
+        if not getattr(settings, "gemini_tts_enabled", True) and os.environ.get("GEMINI_TTS_ENABLED", "").lower() not in ["true", "1"]:
+            return False, "Gemini TTS is disabled in configuration (GEMINI_TTS_ENABLED=false).", "DISABLED"
+
+        project = getattr(settings, "google_cloud_project", None) or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        location = getattr(settings, "google_cloud_location", None) or os.environ.get("GOOGLE_CLOUD_LOCATION") or "global"
+
+        if not project or str(project).strip() in ("", "None", "undefined"):
+            cat, msg = cls.classify_error("Missing project", project=None, location=location)
+            return False, msg, cat
+
+        try:
+            import google.auth
+            google.auth.default()
+        except Exception as e:
+            cat, msg = cls.classify_error(e, project=project, location=location)
+            return False, msg, cat
+
+        return True, f"Google Cloud Project '{project}' and ADC credentials verified for location '{location}'.", None
+
+    def _get_client(self):
+        if self._mock_client is not None:
+            return self._mock_client
+        if self._client is not None:
+            return self._client
+
+        try:
+            from google import genai
+        except ImportError:
+            raise TTSProviderUnavailableError("TTS FAILED / GEMINI TTS UNAVAILABLE: google-genai SDK is not installed.")
+
+        project = self.project or getattr(settings, "google_cloud_project", None) or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        location = self.location
+
+        # 1. Project configuration check
+        if not project or str(project).strip() in ("", "None", "undefined"):
+            cat, msg = self.classify_error("Missing project", project=None, model=self.model, location=location)
+            raise TTSProviderUnavailableError(f"TTS FAILED / GEMINI TTS UNAVAILABLE [{cat}]: {msg}")
+
+        # 2. Check ADC presence before initializing
+        import google.auth
+        try:
+            google.auth.default()
+        except Exception as adc_err:
+            cat, msg = self.classify_error(adc_err, project=project, model=self.model, location=location)
+            raise TTSProviderUnavailableError(f"TTS FAILED / GEMINI TTS UNAVAILABLE [{cat}]: {msg}")
+
+        # 3. Initialize Enterprise Client using Application Default Credentials
+        # DO NOT pass api_key! Enterprise Agent Platform uses ADC.
+        try:
+            self._client = genai.Client(
+                enterprise=True,
+                project=project,
+                location=location
+            )
+        except Exception as e:
+            cat, msg = self.classify_error(e, project=project, model=self.model, location=location)
+            raise TTSProviderUnavailableError(f"TTS FAILED / GEMINI TTS UNAVAILABLE [{cat}]: {msg}")
+
+        return self._client
+
+    def _generate_with_retry(self, client: Any, model: str, contents: Any, config: Any) -> Any:
+        retries = 0
+        project = self.project or getattr(settings, "google_cloud_project", None) or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        while retries <= self.max_retries:
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config
+                )
+                return response
+            except Exception as e:
+                cat, msg = self.classify_error(e, project=project, model=model, location=self.location)
+                if cat == "RATE_LIMITING_OR_TRANSIENT_ERROR":
+                    retries += 1
+                    if retries <= self.max_retries:
+                        time.sleep(2 ** retries)
+                        continue
+                raise TTSProviderUnavailableError(f"TTS FAILED / GEMINI TTS UNAVAILABLE [{cat}]: Model '{model}' generation failed: {msg}")
+
+    def _extract_audio_bytes(self, response: Any, model: str) -> Tuple[bytes, str]:
+        audio_bytes = None
+        mime_type = "audio/pcm"
+        candidates = getattr(response, "candidates", []) or []
+        for cand in candidates:
+            content = getattr(cand, "content", None)
+            if content and hasattr(content, "parts"):
+                for part in content.parts:
+                    inline = getattr(part, "inline_data", None)
+                    if inline and getattr(inline, "data", None):
+                        audio_bytes = inline.data
+                        mime_type = getattr(inline, "mime_type", "audio/pcm")
+                        break
+            if audio_bytes:
+                break
+
+        if not audio_bytes or len(audio_bytes) < 100:
+            raise TTSProviderUnavailableError(
+                f"TTS FAILED / GEMINI TTS UNAVAILABLE [INVALID_RESPONSE]: Model '{model}' returned empty or truncated audio."
+            )
+        return audio_bytes, mime_type
+
+    def synthesize(self, text: str, voice_config: Optional[Dict[str, Any]] = None) -> TTSResult:
+        cfg = voice_config or {}
+
+        # Support structured multi-speaker dialogue turns
+        dialogue = cfg.get("dialogue")
+        if dialogue and isinstance(dialogue, list) and len(dialogue) > 1:
+            return self._synthesize_dialogue(dialogue, cfg)
+
+        speech_text = NaturalSpeechFormatter.format_for_speech(text)
+        if not speech_text or not speech_text.strip():
+            raise ValueError("Narration text is empty for TTS synthesis.")
+
+        speaker = cfg.get("speaker") or "Teacher"
+        is_student = str(speaker).strip().lower() == "student"
+
+        # Determine voice identity
+        if is_student:
+            chosen_voice = cfg.get("student_voice") or cfg.get("voice") or self.student_voice
+        else:
+            chosen_voice = cfg.get("teacher_voice") or cfg.get("voice") or self.teacher_voice
+
+        language = cfg.get("language") or self.language_code
+        model = cfg.get("model") or self.model
+        client = self._get_client()
+
+        # Build GenerateContentConfig with SpeechConfig (Gemini 3.8 TTS schema)
+        try:
+            from google.genai import types
+            voice_config_obj = types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=chosen_voice),
+                voice=chosen_voice
+            )
+            speech_config = types.SpeechConfig(
+                voice_config=voice_config_obj,
+                language_code=language
+            )
+            gen_config = types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=speech_config
+            )
+        except Exception as e:
+            project = self.project or getattr(settings, "google_cloud_project", None) or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            cat, msg = self.classify_error(e, project=project, model=model, location=self.location)
+            raise TTSProviderUnavailableError(f"TTS FAILED / GEMINI TTS UNAVAILABLE [{cat}]: Failed to build speech configuration: {str(e)}")
+
+        # Execute generation with retry
+        response = self._generate_with_retry(client, model, speech_text, gen_config)
+        audio_bytes, mime_type = self._extract_audio_bytes(response, model)
+
+        # Convert to standard 44.1 kHz, 16-bit mono WAV
+        wav_bytes, duration = self._convert_to_standard_wav(audio_bytes, mime_type)
+
+        return TTSResult(
+            audio_bytes=wav_bytes,
+            duration_seconds=duration,
+            format="wav",
+            engine=self.engine,
+            voice=chosen_voice,
+            is_development=False
+        )
+
+    def build_multi_speaker_config(
+        self,
+        teacher_voice: Optional[str] = None,
+        student_voice: Optional[str] = None,
+        language_code: Optional[str] = None
+    ) -> Any:
+        """
+        Builds the official Gemini 3.8 MultiSpeakerVoiceConfig GenerateContentConfig.
+        Uses exact documented schema:
+        - response_modalities=["AUDIO"]
+        - speech_config.multi_speaker_voice_config.speaker_voice_configs
+        """
+        from google.genai import types
+        t_voice = teacher_voice or self.teacher_voice
+        s_voice = student_voice or self.student_voice
+        lang = language_code or self.language_code
+
+        return types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                language_code=lang,
+                multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
+                    speaker_voice_configs=[
+                        types.SpeakerVoiceConfig(
+                            speaker="Teacher",
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=t_voice),
+                                voice=t_voice
+                            )
+                        ),
+                        types.SpeakerVoiceConfig(
+                            speaker="Student",
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=s_voice),
+                                voice=s_voice
+                            )
+                        )
+                    ]
+                )
+            )
+        )
+
+    def synthesize_multi_speaker(
+        self,
+        dialogue_prompt: str,
+        teacher_voice: Optional[str] = None,
+        student_voice: Optional[str] = None,
+        language_code: Optional[str] = None,
+        model: Optional[str] = None
+    ) -> TTSResult:
+        """
+        Synthesizes two-speaker teacher-student dialogue in a single request using
+        Gemini 3.8 Flash TTS native MultiSpeakerVoiceConfig.
+        """
+        client = self._get_client()
+        chosen_model = model or self.model
+        gen_config = self.build_multi_speaker_config(
+            teacher_voice=teacher_voice,
+            student_voice=student_voice,
+            language_code=language_code
+        )
+        response = self._generate_with_retry(client, chosen_model, dialogue_prompt, gen_config)
+        audio_bytes, mime_type = self._extract_audio_bytes(response, chosen_model)
+        wav_bytes, duration = self._convert_to_standard_wav(audio_bytes, mime_type)
+
+        return TTSResult(
+            audio_bytes=wav_bytes,
+            duration_seconds=duration,
+            format="wav",
+            engine=self.engine,
+            voice="Teacher+Student",
+            is_development=False
+        )
+
+    def _synthesize_dialogue(self, dialogue: List[Dict[str, Any]], parent_cfg: Dict[str, Any]) -> TTSResult:
+        """
+        Synthesizes two-speaker teacher-student conversation turns sequentially
+        and concatenates them into a unified WAV file with natural turn pauses.
+        If parent_cfg specifies native_multi_speaker=True, uses synthesize_multi_speaker.
+        """
+        valid_turns = []
+        for turn in dialogue:
+            t_speaker = turn.get("speaker") or "Teacher"
+            t_text = NaturalSpeechFormatter.format_for_speech(turn.get("text") or turn.get("narration") or "")
+            if t_text.strip():
+                valid_turns.append((t_speaker, t_text))
+
+        if not valid_turns:
+            raise TTSProviderUnavailableError("Dialogue contained no valid spoken turns.")
+
+        if parent_cfg.get("native_multi_speaker", False):
+            dialogue_prompt = "\n".join([f"{spk}: {txt}" for spk, txt in valid_turns])
+            return self.synthesize_multi_speaker(
+                dialogue_prompt=dialogue_prompt,
+                teacher_voice=parent_cfg.get("teacher_voice") or self.teacher_voice,
+                student_voice=parent_cfg.get("student_voice") or self.student_voice,
+                language_code=parent_cfg.get("language") or self.language_code,
+                model=parent_cfg.get("model") or self.model
+            )
+
+        # Sequential turn synthesis with per-turn audio caching and concatenation
+        turn_wavs: List[bytes] = []
+        total_dur = 0.0
+        for spk, txt in valid_turns:
+            turn_cfg = dict(parent_cfg)
+            turn_cfg["speaker"] = spk
+            turn_cfg.pop("dialogue", None)
+            res = self.synthesize(txt, turn_cfg)
+            turn_wavs.append(res.audio_bytes)
+            total_dur += res.duration_seconds
+
+        concatenated_wav, final_dur = self._concatenate_wav_segments(turn_wavs)
+        return TTSResult(
+            audio_bytes=concatenated_wav,
+            duration_seconds=final_dur,
+            format="wav",
+            engine=self.engine,
+            voice="Teacher+Student",
+            is_development=False
+        )
+
+    def _concatenate_wav_segments(self, wav_list: List[bytes], pause_seconds: float = 0.25) -> Tuple[bytes, float]:
+        if len(wav_list) == 1:
+            with wave.open(io.BytesIO(wav_list[0]), "rb") as wf:
+                dur = wf.getnframes() / float(wf.getframerate())
+            return wav_list[0], round(dur, 2)
+
+        pause_frames = int(44100 * pause_seconds)
+        pause_bytes = b"\x00\x00" * pause_frames
+
+        combined_frames = bytearray()
+        for idx, wb in enumerate(wav_list):
+            if idx > 0 and pause_seconds > 0:
+                combined_frames.extend(pause_bytes)
+            with wave.open(io.BytesIO(wb), "rb") as wf:
+                combined_frames.extend(wf.readframes(wf.getnframes()))
+
+        out_buf = io.BytesIO()
+        with wave.open(out_buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(44100)
+            wf.writeframes(combined_frames)
+
+        out_bytes = out_buf.getvalue()
+        dur = round(len(combined_frames) / (2 * 44100), 2)
+        return out_bytes, dur
+
+    def _convert_to_standard_wav(self, raw_audio: bytes, mime_type: str) -> Tuple[bytes, float]:
+        with tempfile.TemporaryDirectory() as td:
+            is_pcm = "pcm" in mime_type.lower() or mime_type == "audio/x-raw"
+            ext = ".pcm" if is_pcm else ".bin"
+            raw_path = os.path.join(td, f"raw_audio{ext}")
+            wav_path = os.path.join(td, "speech.wav")
+
+            with open(raw_path, "wb") as f:
+                f.write(raw_audio)
+
+            rate_match = re.search(r"rate=(\d+)", mime_type.lower())
+            input_rate = rate_match.group(1) if rate_match else "24000"
+
+            if is_pcm:
+                cmd = [
+                    self.ffmpeg_exe, "-y",
+                    "-f", "s16le",
+                    "-ar", input_rate,
+                    "-ac", "1",
+                    "-i", raw_path,
+                    "-ar", "44100",
+                    "-ac", "1",
+                    wav_path
+                ]
+            else:
+                cmd = [
+                    self.ffmpeg_exe, "-y",
+                    "-i", raw_path,
+                    "-ar", "44100",
+                    "-ac", "1",
+                    wav_path
+                ]
+
+            try:
+                proc = subprocess.run(cmd, check=True, capture_output=True)
+            except subprocess.CalledProcessError as e:
+                err_text = e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e)
+                raise TTSProviderUnavailableError(f"TTS audio conversion to WAV failed: {err_text}")
+
+            with open(wav_path, "rb") as wf:
+                wav_bytes = wf.read()
+
+            try:
+                with wave.open(wav_path, "rb") as wave_file:
+                    n_frames = wave_file.getnframes()
+                    fr = wave_file.getframerate()
+                    duration = round(n_frames / float(fr), 2)
+            except Exception as e:
+                raise TTSProviderUnavailableError(f"Generated WAV file is invalid: {str(e)}")
+
+            if duration <= 0:
+                raise TTSProviderUnavailableError("Generated audio has zero duration.")
+
+            return wav_bytes, duration
+
+
 # Backward compatibility aliases
 TTSEngine = TTSProvider
 DeterministicTTSEngine = DeterministicTTSProvider
 LocalTTSEngine = LocalTTSProvider
 ProductionTTSEngine = NeuralTTSProvider
+GeminiTTSEngine = GoogleGeminiTTSProvider
+GoogleGeminiTTSEngine = GoogleGeminiTTSProvider
 
 
 def get_tts_provider(provider_name: Optional[str] = None) -> TTSProvider:
@@ -446,9 +1119,11 @@ def get_tts_provider(provider_name: Optional[str] = None) -> TTSProvider:
     elif os.environ.get("PYTEST_CURRENT_TEST"):
         prov = os.environ.get("TEST_TTS_PROVIDER", "deterministic").lower()
     else:
-        prov = (settings.tts_provider or settings.tts_engine or os.environ.get("TTS_PROVIDER", "neural")).lower()
+        prov = (settings.tts_provider or settings.tts_engine or os.environ.get("TTS_PROVIDER", "gemini")).lower()
 
-    if prov in ["production", "prod"]:
+    if prov in ["gemini", "gemini_tts", "google", "gemini-tts"]:
+        return GoogleGeminiTTSProvider()
+    elif prov in ["production", "prod"]:
         api_key = os.environ.get("ELEVENLABS_API_KEY") or settings.elevenlabs_api_key
         if not api_key:
             return LocalTTSProvider()
@@ -461,7 +1136,7 @@ def get_tts_provider(provider_name: Optional[str] = None) -> TTSProvider:
         return LocalTTSProvider()
     elif prov == "deterministic":
         return DeterministicTTSProvider()
-    return NeuralTTSProvider()
+    return GoogleGeminiTTSProvider() if settings.gemini_tts_enabled else NeuralTTSProvider()
 
 
 def get_tts_engine(engine_name: Optional[str] = None) -> TTSProvider:
@@ -1313,11 +1988,29 @@ class LocalFFmpegVideoRenderer(VideoRenderer):
 # 6. VIDEO GENERATION SERVICE (ORCHESTRATOR)
 # ==============================================================================
 
+class RenderingCancelledException(Exception):
+    """Raised when an ongoing rendering job is cancelled by an administrator."""
+    pass
+
+
+RENDERING_STAGE_METADATA = {
+    1: {"code": "PREPARING_SCRIPT", "name": "Preparing script and scenes", "target_pct": 5.0},
+    2: {"code": "GENERATING_AUDIO", "name": "Generating narration/audio", "target_pct": 35.0},
+    3: {"code": "GENERATING_VISUALS", "name": "Generating scene visuals", "target_pct": 55.0},
+    4: {"code": "RENDERING_SCENES", "name": "Rendering individual scenes", "target_pct": 70.0},
+    5: {"code": "MERGING_SCENES", "name": "Merging scenes", "target_pct": 80.0},
+    6: {"code": "ENCODING_MP4", "name": "Encoding the final MP4", "target_pct": 90.0},
+    7: {"code": "GENERATING_CAPTIONS", "name": "Generating captions", "target_pct": 93.0},
+    8: {"code": "GENERATING_THUMBNAIL", "name": "Generating thumbnail", "target_pct": 96.0},
+    9: {"code": "VALIDATING_OUTPUT", "name": "Final video validation", "target_pct": 100.0},
+}
+
+
 class VideoGenerationService:
     """
     End-to-end video generation orchestrator coordinating:
     Script validation -> Narration audio (TTS) -> Scene generation -> FFmpeg rendering
-    -> Thumbnail extraction -> Captions -> Media validation -> ProcessingJob tracking.
+    -> Thumbnail extraction -> Captions -> Media validation -> ProcessingJob & VideoRenderingJob tracking.
     """
 
     def __init__(self, tts_engine: Optional[TTSEngine] = None, renderer: Optional[VideoRenderer] = None):
@@ -1326,60 +2019,135 @@ class VideoGenerationService:
         self.scene_generator = SceneGenerator()
         self.storage = get_storage()
 
-    def start_video_generation(
+    def update_job_progress(
         self,
-        video_id: int,
+        job_id: str,
+        db: Session,
+        stage_number: int,
+        progress: float,
+        current_scene: int = 0,
+        completed_scenes: int = 0,
+        total_scenes: Optional[int] = None
+    ) -> bool:
+        """
+        Updates persistent VideoRenderingJob record with genuine work progress.
+        Returns False if the job has been cancelled by an administrator.
+        """
+        job = db.query(VideoRenderingJob).filter(VideoRenderingJob.job_id == job_id).first()
+        if not job:
+            return True
+
+        db.refresh(job)
+        if job.is_cancelled:
+            return False
+
+        meta = RENDERING_STAGE_METADATA.get(stage_number, {})
+        job.current_stage = meta.get("code", f"STAGE_{stage_number}")
+        job.stage_number = stage_number
+        job.stage_name = meta.get("name", f"Stage {stage_number}")
+        job.progress = round(min(100.0, max(0.0, progress)), 1)
+        job.current_scene = current_scene
+        job.completed_scenes = completed_scenes
+        if total_scenes is not None:
+            job.total_scenes = total_scenes
+
+        now = utcnow()
+        started = normalize_datetime(job.started_at) or now
+        elapsed = max(0.0, (now - started).total_seconds())
+        job.elapsed_seconds = round(elapsed, 1)
+
+        # Genuine data-backed ETA calculation based on completed progress percentage
+        if job.progress >= 5.0 and elapsed > 0:
+            total_estimated = elapsed / (job.progress / 100.0)
+            remaining = max(0.0, total_estimated - elapsed)
+            job.estimated_remaining_seconds = round(remaining, 1)
+        else:
+            job.estimated_remaining_seconds = None
+
+        job.updated_at = now
+        db.commit()
+        return True
+
+    def run_rendering_pipeline(
+        self,
+        job_id: str,
         db: Session,
         force: bool = False,
         tts_engine_name: Optional[str] = None,
         voice: Optional[str] = None
     ) -> Video:
-        video = db.get(Video, video_id)
+        """
+        Executes the 9-stage video rendering pipeline synchronously for the given job.
+        Survives browser refresh by persisting real-time updates directly to database.
+        """
+        job = db.query(VideoRenderingJob).filter(VideoRenderingJob.job_id == job_id).first()
+        if not job:
+            raise ValueError(f"Rendering job '{job_id}' not found.")
+
+        video = db.get(Video, job.video_id)
         if not video:
-            raise ValueError(f"Video {video_id} not found.")
+            job.status = "FAILED"
+            job.error_message = f"Video {job.video_id} not found."
+            job.completed_at = utcnow()
+            db.commit()
+            raise ValueError(f"Video {job.video_id} not found.")
 
-        # Require approved script
-        if (video.script_status or "").upper() != "SCRIPT_APPROVED":
-            raise ValueError(
-                "Video rendering requires an approved script. "
-                f"Current script status is '{video.script_status or 'None'}'. "
-                "Only SCRIPT_APPROVED video scripts may enter the video rendering pipeline."
+        # Also maintain a ProcessingJob for backward-compatibility with older tests
+        proc_job = db.query(ProcessingJob).filter(
+            ProcessingJob.video_id == video.id,
+            ProcessingJob.job_type == "VIDEO_GENERATION"
+        ).order_by(ProcessingJob.id.desc()).first()
+        if not proc_job or proc_job.status in ["COMPLETED", "FAILED"]:
+            proc_job = ProcessingJob(
+                job_type="VIDEO_GENERATION",
+                video_id=video.id,
+                status="RUNNING",
+                progress=0.0,
+                current_stage="PREPARING_SCRIPT",
+                started_at=utcnow()
             )
+            db.add(proc_job)
+            db.commit()
+            db.refresh(proc_job)
 
-        # Retrieve structured script
-        script_content = video.script_data or {}
-        sections = script_content.get("sections")
-        if not sections and video.script_versions:
-            sections = video.script_versions[0].script_content.get("sections")
-
-        if not sections:
-            raise ValueError("Structured script sections not found for video.")
-
-        # 1. Create or link ProcessingJob
-        job = ProcessingJob(
-            job_type="VIDEO_GENERATION",
-            video_id=video.id,
-            status="QUEUED",
-            progress=0.0,
-            current_stage="QUEUED",
-            started_at=utcnow()
-        )
-        db.add(job)
-        video.render_status = "AUDIO_GENERATING"
-        db.commit()
-        db.refresh(job)
-
+        scratch_temp_dir = None
         try:
-            # Stage 1: VALIDATING_SCRIPT (10%)
-            job.current_stage = "VALIDATING_SCRIPT"
-            job.progress = 10.0
+            job.status = "RUNNING"
+            job.started_at = utcnow()
             db.commit()
 
-            # Stage 2: VALIDATING_NARRATION & SYNTHESIZING_SCENE_AUDIO (30%)
-            job.current_stage = "GENERATING_AUDIO"
-            job.progress = 30.0
+            # -------------------------------------------------------------
+            # STAGE 1: Preparing script and scenes (5%)
+            # -------------------------------------------------------------
+            if (video.script_status or "").upper() != "SCRIPT_APPROVED":
+                raise ValueError(
+                    "Video rendering requires an approved script. "
+                    f"Current script status is '{video.script_status or 'None'}'. "
+                    "Only SCRIPT_APPROVED video scripts may enter the video rendering pipeline."
+                )
+
+            script_content = video.script_data or {}
+            sections = script_content.get("sections")
+            if not sections and video.script_versions:
+                sections = video.script_versions[0].script_content.get("sections")
+
+            if not sections:
+                raise ValueError("Structured script sections not found for video.")
+
+            total_scenes = len(sections)
+            video.render_status = "AUDIO_GENERATING"
             db.commit()
 
+            if not self.update_job_progress(job_id, db, stage_number=1, progress=5.0, current_scene=1, completed_scenes=0, total_scenes=total_scenes):
+                raise RenderingCancelledException(job.cancellation_reason or "Cancelled by administrator")
+
+            proc_job.current_stage = "PREPARING_SCRIPT"
+            proc_job.progress = 5.0
+            db.commit()
+
+            # -------------------------------------------------------------
+            # STAGE 2: Generating narration/audio (scene-by-scene: 5% -> 35%)
+            # -------------------------------------------------------------
             active_tts = get_tts_engine(tts_engine_name) if tts_engine_name else self.tts_engine
             voice_config = {"voice": voice} if voice else None
             audio_cache = TTSAudioCache()
@@ -1396,11 +2164,14 @@ class VideoGenerationService:
             selected_voice = voice or (settings.elevenlabs_voice_id if getattr(active_tts, "prefer_elevenlabs", False) and getattr(active_tts, "api_key", None) else settings.tts_voice)
 
             for idx, sec in enumerate(sections, start=1):
+                pct = 5.0 + (float(idx - 1) / float(total_scenes)) * 30.0
+                if not self.update_job_progress(job_id, db, stage_number=2, progress=pct, current_scene=idx, completed_scenes=idx - 1, total_scenes=total_scenes):
+                    raise RenderingCancelledException(job.cancellation_reason or "Cancelled by administrator")
+
                 sec_type = sec.get("type", "CONCEPT")
                 title = sec.get("title", f"Scene {idx}")
                 narration = (sec.get("narration") or sec.get("narration_text") or "").strip()
 
-                # REQUIREMENT 4: TTS INPUT VALIDATION
                 if not narration:
                     raise ValueError(f"Narration required for scene {idx} ('{title}') but narration text is empty.")
                 if len(narration) < 15 or len(narration.split()) < 3:
@@ -1409,23 +2180,45 @@ class VideoGenerationService:
                         f"({len(narration)} chars, {len(narration.split())} words)."
                     )
 
-                # Check audio cache (Build 8.4.2 Requirement 15)
+                # Determine active speaker and appropriate voice identity
+                sec_speaker = sec.get("speaker") or "Teacher"
+                is_gemini = isinstance(active_tts, GoogleGeminiTTSProvider) or getattr(active_tts, "engine", "") == "gemini_tts"
+                if is_gemini:
+                    if str(sec_speaker).strip().lower() == "student":
+                        scene_voice = (voice_config or {}).get("student_voice") or getattr(active_tts, "student_voice", "Puck")
+                    else:
+                        scene_voice = (voice_config or {}).get("teacher_voice") or (voice_config or {}).get("voice") or getattr(active_tts, "teacher_voice", "Aoede")
+                else:
+                    scene_voice = selected_voice
+
+                scene_voice_config = dict(voice_config or {})
+                scene_voice_config["speaker"] = sec_speaker
+                scene_voice_config["voice"] = str(scene_voice)
+                if "dialogue" in sec:
+                    scene_voice_config["dialogue"] = sec["dialogue"]
+
                 cache_key = audio_cache.get_key(
                     script_version=script_version_num,
                     scene_id=idx,
                     provider=getattr(active_tts, "engine", "neural_tts"),
-                    voice=str(selected_voice),
+                    voice=str(scene_voice),
                     speed=settings.tts_speed,
-                    text=narration
+                    text=narration,
+                    model=getattr(active_tts, "model", ""),
+                    language=getattr(active_tts, "language_code", "")
                 )
                 tts_res = audio_cache.get(cache_key)
                 if not tts_res:
-                    tts_res = active_tts.synthesize(narration, voice_config)
-                    audio_cache.put(cache_key, tts_res)
+                    tts_res = active_tts.synthesize(narration, scene_voice_config)
+                    audio_cache.put(
+                        cache_key,
+                        tts_res,
+                        model=getattr(active_tts, "model", ""),
+                        language=getattr(active_tts, "language_code", "")
+                    )
 
                 last_tts_engine = tts_res.engine
 
-                # REQUIREMENT 5: TTS OUTPUT VALIDATION
                 if not tts_res.audio_bytes or len(tts_res.audio_bytes) < 100:
                     raise ValueError(f"TTS output empty or missing for scene {idx} ('{title}').")
                 if tts_res.duration_seconds <= 0:
@@ -1443,7 +2236,6 @@ class VideoGenerationService:
                     channels = ch
                     sampwidth = sw
 
-                # Check RMS amplitude to reject effectively silent audio
                 sample_count = len(audio_raw) // sw
                 if sample_count > 0:
                     samples_data = struct.unpack("<" + "h" * sample_count, audio_raw)
@@ -1455,7 +2247,6 @@ class VideoGenerationService:
                             f"(RMS: {rms_amp:.1f}, Max: {max_amp}). Real audible speech is required."
                         )
 
-                # Save individual scene audio
                 scene_audio_filename = f"video_{video.id}_scene_{idx:03d}.wav"
                 scene_audio_key = self.storage.save_file(
                     tts_res.audio_bytes,
@@ -1463,9 +2254,8 @@ class VideoGenerationService:
                     folder=f"videos/{video.id}/scenes"
                 )
 
-                # REQUIREMENT 6: NARRATION DURATION & ABSORPTION PAUSE
                 spoken_duration = round(nf / float(sr), 2)
-                pause_sec = 1.0  # 1.0s educational pause between scenes
+                pause_sec = 1.0
                 scene_duration = round(spoken_duration + pause_sec, 2)
                 start_t = round(current_time, 2)
                 end_t = round(current_time + scene_duration, 2)
@@ -1492,12 +2282,11 @@ class VideoGenerationService:
                 }
                 scenes.append(scene_payload)
 
-                # Append spoken audio frames + pause silence
                 master_audio_frames.extend(audio_raw)
                 silence_frames = int(sr * pause_sec)
                 master_audio_frames.extend(b"\x00" * (silence_frames * sw * ch))
 
-            # Assemble continuous master narration track
+            # Assemble continuous master audio
             with io.BytesIO() as master_wav_io:
                 with wave.open(master_wav_io, "wb") as mwf:
                     mwf.setnchannels(channels)
@@ -1506,7 +2295,6 @@ class VideoGenerationService:
                     mwf.writeframes(master_audio_frames)
                 master_audio_bytes = master_wav_io.getvalue()
 
-            # Store master audio asset
             audio_filename = f"video_{video.id}_audio.wav"
             audio_storage_key = self.storage.save_file(
                 master_audio_bytes,
@@ -1520,32 +2308,130 @@ class VideoGenerationService:
             video.scenes_data = scenes
             db.commit()
 
-            # Stage 3: SCENES_VALIDATION (45%)
-            job.current_stage = "GENERATING_SCENES"
-            job.progress = 45.0
-            SceneGenerator.validate_scenes(scenes)
-            db.commit()
+            # -------------------------------------------------------------
+            # STAGE 3: Generating scene visuals (scene-by-scene: 35% -> 55%)
+            # -------------------------------------------------------------
+            scratch_temp_dir = tempfile.mkdtemp(prefix=f"render_{video.id}_")
+            wav_path = os.path.join(scratch_temp_dir, "narration.wav")
+            with open(wav_path, "wb") as wf:
+                wf.write(master_audio_bytes)
 
-            # Stage 4: RENDERING_VIDEO (75%)
-            job.current_stage = "RENDERING_VIDEO"
-            job.progress = 75.0
+            slide_paths: List[str] = []
+            slide_renderer = VisualSlideRenderer()
+            for idx, sc in enumerate(scenes, start=1):
+                pct = 35.0 + (float(idx - 1) / float(total_scenes)) * 20.0
+                if not self.update_job_progress(job_id, db, stage_number=3, progress=pct, current_scene=idx, completed_scenes=idx - 1, total_scenes=total_scenes):
+                    raise RenderingCancelledException(job.cancellation_reason or "Cancelled by administrator")
+
+                img = slide_renderer.render_scene_slide(video, sc)
+                slide_path = os.path.join(scratch_temp_dir, f"slide_{idx:03d}.png")
+                img.save(slide_path, "PNG")
+                slide_paths.append(slide_path)
+
+            # -------------------------------------------------------------
+            # STAGE 4: Rendering individual scenes (70%)
+            # -------------------------------------------------------------
+            if not self.update_job_progress(job_id, db, stage_number=4, progress=70.0, current_scene=total_scenes, completed_scenes=total_scenes, total_scenes=total_scenes):
+                raise RenderingCancelledException(job.cancellation_reason or "Cancelled by administrator")
+
+            concat_path = os.path.join(scratch_temp_dir, "concat.txt")
+            with open(concat_path, "w") as cf:
+                for idx, sc in enumerate(scenes):
+                    slide_path = slide_paths[idx] if idx < len(slide_paths) else slide_paths[-1]
+                    dur = sc.get("estimated_duration_seconds", 10.0)
+                    cf.write(f"file '{slide_path}'\n")
+                    cf.write(f"duration {dur:.2f}\n")
+                if slide_paths:
+                    cf.write(f"file '{slide_paths[-1]}'\n")
+
+            # -------------------------------------------------------------
+            # STAGE 5: Merging scenes (80%)
+            # -------------------------------------------------------------
+            if not self.update_job_progress(job_id, db, stage_number=5, progress=80.0, current_scene=total_scenes, completed_scenes=total_scenes, total_scenes=total_scenes):
+                raise RenderingCancelledException(job.cancellation_reason or "Cancelled by administrator")
+
             video.render_status = "RENDERING"
             db.commit()
 
-            # Determine new version number
             prev_versions_count = db.query(VideoRenderVersion).filter(VideoRenderVersion.video_id == video.id).count()
             new_version_num = prev_versions_count + 1
 
-            # Prepare local output path in uploads or temporary location
             local_uploads_dir = getattr(self.storage, "base_dir", os.path.join(os.getcwd(), "uploads"))
             target_video_dir = os.path.join(local_uploads_dir, "videos", str(video.id))
             os.makedirs(target_video_dir, exist_ok=True)
             output_filename = f"video_{video.id}_v{new_version_num}.mp4"
             output_mp4_path = os.path.join(target_video_dir, output_filename)
 
-            render_res = self.renderer.render(video, scenes, master_audio_bytes, output_mp4_path)
-            probe = render_res["probe"]
+            # -------------------------------------------------------------
+            # STAGE 6: Encoding the final MP4 (90%)
+            # -------------------------------------------------------------
+            if not self.update_job_progress(job_id, db, stage_number=6, progress=90.0, current_scene=total_scenes, completed_scenes=total_scenes, total_scenes=total_scenes):
+                raise RenderingCancelledException(job.cancellation_reason or "Cancelled by administrator")
 
+            cmd = [
+                self.renderer.ffmpeg_exe, "-y",
+                "-f", "concat", "-safe", "0", "-i", concat_path,
+                "-i", wav_path,
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-r", str(settings.video_fps),
+                "-movflags", "+faststart",
+                "-shortest",
+                output_mp4_path
+            ]
+            proc = subprocess.run(cmd, capture_output=True, timeout=180)
+            if proc.returncode != 0:
+                raise RuntimeError(f"FFmpeg render failed: {proc.stderr.decode()}")
+
+            # -------------------------------------------------------------
+            # STAGE 7: Generating captions (93%)
+            # -------------------------------------------------------------
+            if not self.update_job_progress(job_id, db, stage_number=7, progress=93.0, current_scene=total_scenes, completed_scenes=total_scenes, total_scenes=total_scenes):
+                raise RenderingCancelledException(job.cancellation_reason or "Cancelled by administrator")
+
+            srt_content = CaptionGenerator.generate_srt(scenes)
+            captions_key = self.storage.save_file(srt_content.encode("utf-8"), f"video_{video.id}_captions.srt", folder=f"videos/{video.id}")
+            video.captions_storage_key = captions_key
+
+            # -------------------------------------------------------------
+            # STAGE 8: Generating thumbnail (96%)
+            # -------------------------------------------------------------
+            if not self.update_job_progress(job_id, db, stage_number=8, progress=96.0, current_scene=total_scenes, completed_scenes=total_scenes, total_scenes=total_scenes):
+                raise RenderingCancelledException(job.cancellation_reason or "Cancelled by administrator")
+
+            thumbnail_path = os.path.splitext(output_mp4_path)[0] + "_thumb.jpg"
+            thumb_cmd = [
+                self.renderer.ffmpeg_exe, "-y",
+                "-ss", "00:00:01",
+                "-i", output_mp4_path,
+                "-vframes", "1",
+                "-q:v", "2",
+                thumbnail_path
+            ]
+            subprocess.run(thumb_cmd, capture_output=True, timeout=30)
+            if not os.path.exists(thumbnail_path):
+                subprocess.run([
+                    self.renderer.ffmpeg_exe, "-y", "-i", output_mp4_path,
+                    "-vframes", "1", "-q:v", "2", thumbnail_path
+                ], capture_output=True)
+
+            if os.path.exists(thumbnail_path):
+                with open(thumbnail_path, "rb") as tf:
+                    thumb_bytes = tf.read()
+                thumb_key = self.storage.save_file(thumb_bytes, f"video_{video.id}_thumb.jpg", folder=f"videos/{video.id}")
+                video.thumbnail_storage_key = thumb_key
+
+            # -------------------------------------------------------------
+            # STAGE 9: Final video validation (100%)
+            # -------------------------------------------------------------
+            if not self.update_job_progress(job_id, db, stage_number=9, progress=98.0, current_scene=total_scenes, completed_scenes=total_scenes, total_scenes=total_scenes):
+                raise RenderingCancelledException(job.cancellation_reason or "Cancelled by administrator")
+
+            probe = self.renderer.probe_media(output_mp4_path)
             if not probe["valid"]:
                 raise ValueError("Rendered MP4 failed stream validation: missing audio or video streams.")
 
@@ -1554,28 +2440,6 @@ class VideoGenerationService:
             video.storage_key = video_storage_key
             video.actual_duration_seconds = probe["duration"]
             video.render_engine = "ffmpeg"
-
-            # Stage 5: GENERATING_THUMBNAIL & CAPTIONS (88%)
-            job.current_stage = "GENERATING_THUMBNAIL"
-            job.progress = 88.0
-            db.commit()
-
-            thumb_path = render_res.get("thumbnail_path")
-            if thumb_path and os.path.exists(thumb_path):
-                with open(thumb_path, "rb") as tf:
-                    thumb_bytes = tf.read()
-                thumb_key = self.storage.save_file(thumb_bytes, f"video_{video.id}_thumb.jpg", folder=f"videos/{video.id}")
-                video.thumbnail_storage_key = thumb_key
-
-            # Generate SRT captions
-            srt_content = CaptionGenerator.generate_srt(scenes)
-            captions_key = self.storage.save_file(srt_content.encode("utf-8"), f"video_{video.id}_captions.srt", folder=f"videos/{video.id}")
-            video.captions_storage_key = captions_key
-
-            # Stage 6: VALIDATING_OUTPUT (95%)
-            job.current_stage = "VALIDATING_OUTPUT"
-            job.progress = 95.0
-            db.commit()
 
             # Supersede old versions
             old_versions = db.query(VideoRenderVersion).filter(
@@ -1601,34 +2465,259 @@ class VideoGenerationService:
             db.add(render_version)
 
             video.render_status = "RENDERED"
-            video.status = "REVIEW"  # In Review for Admin Approval
+            video.status = "REVIEW"
             video.rendered_at = utcnow()
             video.render_error = None
 
+            # Mark both persistent jobs completed
+            video_url = self.storage.get_url(video_storage_key)
             job.status = "COMPLETED"
             job.progress = 100.0
             job.current_stage = "COMPLETED"
+            job.stage_number = 9
+            job.stage_name = "Final video validation (Complete)"
+            job.completed_scenes = total_scenes
+            job.current_scene = total_scenes
             job.completed_at = utcnow()
+            job.estimated_remaining_seconds = 0.0
+            job.output_video_url = video_url
+
+            proc_job.status = "COMPLETED"
+            proc_job.progress = 100.0
+            proc_job.current_stage = "COMPLETED"
+            proc_job.completed_at = utcnow()
+
             db.commit()
             db.refresh(video)
             return video
 
-        except Exception as e:
-            job.status = "FAILED"
-            job.current_stage = "FAILED"
+        except RenderingCancelledException as e:
+            now = utcnow()
+            job.status = "CANCELLED"
+            job.completed_at = now
             job.error_message = str(e)
-            job.completed_at = utcnow()
             video.render_status = "FAILED"
             video.render_error = str(e)
+            proc_job.status = "CANCELLED"
+            proc_job.completed_at = now
             db.commit()
             raise
+
+        except Exception as e:
+            now = utcnow()
+            job.status = "FAILED"
+            job.completed_at = now
+            job.error_message = str(e)
+            video.render_status = "FAILED"
+            video.render_error = str(e)
+            proc_job.status = "FAILED"
+            proc_job.current_stage = "FAILED"
+            proc_job.error_message = str(e)
+            proc_job.completed_at = now
+            db.commit()
+            raise
+
+        finally:
+            if scratch_temp_dir and os.path.exists(scratch_temp_dir):
+                shutil.rmtree(scratch_temp_dir, ignore_errors=True)
+
+    def start_video_generation(
+        self,
+        video_id: int,
+        db: Session,
+        force: bool = False,
+        tts_engine_name: Optional[str] = None,
+        voice: Optional[str] = None
+    ) -> Video:
+        """
+        Synchronous entrypoint for video rendering (preserves 100% backward compatibility
+        for existing tests and direct synchronous callers).
+        """
+        video = db.get(Video, video_id)
+        if not video:
+            raise ValueError(f"Video {video_id} not found.")
+
+        job_id = f"vjob-{video_id}-{uuid.uuid4().hex[:8]}"
+        job = VideoRenderingJob(
+            job_id=job_id,
+            video_id=video_id,
+            video_title=video.title,
+            current_stage="PREPARING_SCRIPT",
+            stage_number=1,
+            stage_name="Preparing script and scenes",
+            status="PENDING",
+            progress=0.0,
+            started_at=utcnow()
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+
+        return self.run_rendering_pipeline(
+            job_id=job_id,
+            db=db,
+            force=force,
+            tts_engine_name=tts_engine_name,
+            voice=voice
+        )
+
+    def queue_video_rendering(
+        self,
+        video_id: int,
+        db: Session,
+        force: bool = False,
+        tts_engine_name: Optional[str] = None,
+        voice: Optional[str] = None
+    ) -> VideoRenderingJob:
+        """
+        Asynchronous background entrypoint. Spawns isolated worker thread and returns
+        the persistent VideoRenderingJob immediately so the client can poll progress.
+        Prevents duplicate active jobs for the same video unless force=True.
+        """
+        video = db.get(Video, video_id)
+        if not video:
+            raise ValueError(f"Video {video_id} not found.")
+
+        if (video.script_status or "").upper() != "SCRIPT_APPROVED":
+            raise ValueError(
+                "Video rendering requires an approved script. "
+                f"Current script status is '{video.script_status or 'None'}'. "
+                "Only SCRIPT_APPROVED video scripts may enter the video rendering pipeline."
+            )
+
+        # Prevent duplicate rendering jobs
+        active_job = db.query(VideoRenderingJob).filter(
+            VideoRenderingJob.video_id == video_id,
+            VideoRenderingJob.status.in_(["PENDING", "RUNNING"])
+        ).order_by(VideoRenderingJob.id.desc()).first()
+
+        if active_job and not force:
+            return active_job
+
+        if active_job and force:
+            active_job.is_cancelled = True
+            active_job.status = "CANCELLED"
+            active_job.cancellation_reason = "Superseded by force re-render request"
+            db.commit()
+
+        job_id = f"vjob-{video_id}-{uuid.uuid4().hex[:8]}"
+        job = VideoRenderingJob(
+            job_id=job_id,
+            video_id=video_id,
+            video_title=video.title,
+            current_stage="PREPARING_SCRIPT",
+            stage_number=1,
+            stage_name="Preparing script and scenes",
+            status="PENDING",
+            progress=0.0,
+            started_at=utcnow()
+        )
+        db.add(job)
+        video.render_status = "AUDIO_GENERATING"
+        db.commit()
+        db.refresh(job)
+
+        # Launch background worker thread
+        def _bg_worker():
+            thread_db = SessionLocal()
+            try:
+                srv = VideoGenerationService()
+                srv.run_rendering_pipeline(
+                    job_id=job_id,
+                    db=thread_db,
+                    force=force,
+                    tts_engine_name=tts_engine_name,
+                    voice=voice
+                )
+            except Exception:
+                pass
+            finally:
+                thread_db.close()
+
+        t = threading.Thread(target=_bg_worker, daemon=True)
+        t.start()
+
+        return job
+
+    def get_rendering_job(
+        self,
+        job_id_or_int: Union[str, int],
+        db: Session
+    ) -> Optional[VideoRenderingJob]:
+        """Looks up a VideoRenderingJob by numeric primary key or string job_id."""
+        if str(job_id_or_int).isdigit():
+            job = db.query(VideoRenderingJob).filter(VideoRenderingJob.id == int(job_id_or_int)).first()
+            if job:
+                return job
+        return db.query(VideoRenderingJob).filter(VideoRenderingJob.job_id == str(job_id_or_int)).first()
+
+    def list_rendering_jobs(
+        self,
+        video_id: Optional[int] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+        db: Session = None
+    ) -> List[VideoRenderingJob]:
+        """Lists active and recent rendering jobs."""
+        q = db.query(VideoRenderingJob)
+        if video_id:
+            q = q.filter(VideoRenderingJob.video_id == video_id)
+        if status:
+            q = q.filter(VideoRenderingJob.status.ilike(status))
+        return q.order_by(VideoRenderingJob.id.desc()).limit(limit).all()
+
+    def cancel_rendering_job(
+        self,
+        job_id_or_int: Union[str, int],
+        db: Session,
+        reason: str = "Cancelled by administrator"
+    ) -> VideoRenderingJob:
+        """Safely cancels an active rendering job."""
+        job = self.get_rendering_job(job_id_or_int, db)
+        if not job:
+            raise ValueError(f"Rendering job '{job_id_or_int}' not found.")
+
+        if job.status in ["COMPLETED", "FAILED", "CANCELLED"]:
+            return job
+
+        job.is_cancelled = True
+        job.cancellation_reason = reason
+        job.status = "CANCELLED"
+        job.completed_at = utcnow()
+        job.error_message = reason
+
+        video = db.get(Video, job.video_id)
+        if video and video.render_status != "RENDERED":
+            video.render_status = "FAILED"
+            video.render_error = reason
+
+        db.commit()
+        db.refresh(job)
+        return job
+
+    def retry_rendering_job(
+        self,
+        job_id_or_int: Union[str, int],
+        db: Session
+    ) -> VideoRenderingJob:
+        """Retries a failed or cancelled rendering job."""
+        job = self.get_rendering_job(job_id_or_int, db)
+        if not job:
+            raise ValueError(f"Rendering job '{job_id_or_int}' not found.")
+
+        return self.queue_video_rendering(video_id=job.video_id, db=db, force=True)
 
     def approve_video(self, video_id: int, db: Session, notes: Optional[str] = None) -> Video:
         video = db.get(Video, video_id)
         if not video:
             raise ValueError(f"Video {video_id} not found.")
         if video.render_status != "RENDERED":
-            raise ValueError(f"Cannot approve video: Video has not been rendered (status: {video.render_status}).")
+            raise ValueError(f"Cannot publish: video has not been rendered (status: {video.render_status}). Video must be rendered before approval or publication.")
+        if (video.script_status or "").upper() != "SCRIPT_APPROVED":
+            raise ValueError(
+                "Cannot approve video: the script must be re-approved and the video re-rendered "
+                f"(script status: {video.script_status or 'None'})."
+            )
         if not video.scenes_data or len(video.scenes_data) == 0:
             raise ValueError("Cannot approve video: Video has 0 scenes.")
         if not video.actual_duration_seconds or video.actual_duration_seconds <= 0:
@@ -1661,8 +2750,8 @@ class VideoGenerationService:
             raise ValueError("Cannot publish: generated MP4 duration is 0 seconds.")
         if not video.video_storage_key or any(p in (video.video_storage_key or "").lower() for p in ["seed_", "sample.mp4", "placeholder"]):
             raise ValueError("Cannot publish: placeholder video files cannot be published.")
-        if video.status not in ["APPROVED", "REVIEW"]:
-            raise ValueError(f"Cannot publish video in status '{video.status}'. Video must be APPROVED first.")
+        if video.status not in ["APPROVED"]:
+            raise ValueError(f"Cannot publish video in status '{video.status}'. Video must be APPROVED first (explicit admin review required).")
 
         video.status = "PUBLISHED"
         latest_ver = db.query(VideoRenderVersion).filter(

@@ -608,6 +608,9 @@ def test_23_student_visibility_isolation(client, auth_headers, db_session):
     assert res_script_appr.status_code == 200, res_script_appr.text
     res_render = client.post(f"/admin/video-plans/{plan_id}/video/generate", headers=admin_h)
     assert res_render.status_code == 200, res_render.text
+    # Explicit admin review approval gates publication
+    res_appr = client.post(f"/admin/videos/{plan_id}/approve", headers=admin_h)
+    assert res_appr.status_code == 200, res_appr.text
     res_pub = client.post(f"/admin/videos/{plan_id}/publish", headers=admin_h)
     assert res_pub.status_code == 200, res_pub.text
 

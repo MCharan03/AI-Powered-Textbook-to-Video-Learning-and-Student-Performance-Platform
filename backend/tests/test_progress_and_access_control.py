@@ -13,7 +13,7 @@ Covers:
 - Admin adaptive-quiz endpoint leaks no other students' weak concepts
 """
 import pytest
-from tests.conftest import make_auth_header
+from tests.conftest import make_auth_header, register_test_artifact
 from app.models.models import (
     Video, Subject, Chapter, Topic, Student, StudentSubject,
     StudentVideoProgress, User, Role, Quiz, Question, QuizAttempt
@@ -248,7 +248,9 @@ def test_captions_vtt_conversion_and_authz(client, isolation_fixture, db_session
     uploads_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "uploads")
     srt_abs_dir = _os.path.join(uploads_dir, "videos", str(vid))
     _os.makedirs(srt_abs_dir, exist_ok=True)
+    register_test_artifact(srt_abs_dir)
     srt_abs = _os.path.join(srt_abs_dir, "captions_test.srt")
+    register_test_artifact(srt_abs)
     with open(srt_abs, "w", encoding="utf-8") as f:
         f.write(
             "1\n00:00:01,000 --> 00:00:04,500\nWelcome to the lesson.\n\n"
@@ -276,7 +278,15 @@ def test_captions_vtt_conversion_and_authz(client, isolation_fixture, db_session
         assert res2.status_code == 403
     finally:
         if _os.path.exists(srt_abs):
-            _os.remove(srt_abs)
+            try:
+                _os.remove(srt_abs)
+            except OSError:
+                pass
+        if _os.path.exists(srt_abs_dir) and not _os.listdir(srt_abs_dir):
+            try:
+                _os.rmdir(srt_abs_dir)
+            except OSError:
+                pass
 
 
 def test_video_detail_reports_captions_and_resume_state(client, isolation_fixture, db_session):

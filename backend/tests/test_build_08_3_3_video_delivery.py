@@ -1,10 +1,11 @@
 import os
+import shutil
 import pytest
 from app.models.models import (
     User, Student, Subject, Chapter, Topic, Video,
     StudentSubject, Role
 )
-from tests.conftest import make_auth_header
+from tests.conftest import make_auth_header, register_test_artifact
 from app.core.security import hash_pw
 
 
@@ -113,7 +114,9 @@ def video_delivery_fixture(db_session):
     uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
     v1_dir = os.path.join(uploads_dir, "videos", str(v_real.id))
     os.makedirs(v1_dir, exist_ok=True)
+    register_test_artifact(v1_dir)
     real_mp4_path = os.path.join(v1_dir, f"video_{v_real.id}.mp4")
+    register_test_artifact(real_mp4_path)
     with open(real_mp4_path, "wb") as f:
         f.write(b"\x00\x00\x00 ftypisom\x00\x00\x02\x00isomiso2mp41\x00\x00\x00(moov" + b"\x00" * 4096)
 
@@ -153,14 +156,26 @@ def video_delivery_fixture(db_session):
 
     db_session.commit()
 
-    return {
-        "user_assigned_id": user_assigned.id,
-        "user_unauth_id": user_unauthorized.id,
-        "v_real_id": v_real.id,
-        "v_unrendered_id": v_unrendered.id,
-        "v_placeholder_id": v_placeholder.id,
-        "real_mp4_path": real_mp4_path
-    }
+    try:
+        yield {
+            "user_assigned_id": user_assigned.id,
+            "user_unauth_id": user_unauthorized.id,
+            "v_real_id": v_real.id,
+            "v_unrendered_id": v_unrendered.id,
+            "v_placeholder_id": v_placeholder.id,
+            "real_mp4_path": real_mp4_path
+        }
+    finally:
+        if os.path.exists(real_mp4_path):
+            try:
+                os.remove(real_mp4_path)
+            except OSError:
+                pass
+        if os.path.exists(v1_dir):
+            try:
+                shutil.rmtree(v1_dir, ignore_errors=True)
+            except OSError:
+                pass
 
 
 def test_1_get_video_returns_valid_playable_url(client, video_delivery_fixture):

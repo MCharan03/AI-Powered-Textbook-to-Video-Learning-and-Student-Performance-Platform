@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_DATABASE_URL = f"sqlite:///{PROJECT_ROOT / 'app.db'}"
 
 
@@ -51,8 +52,31 @@ class Settings(BaseSettings):
     mastery_threshold_mastered: float = 80.0
     mastery_threshold_needs_practice: float = 50.0
 
+    # Phase 2A: Google Gemini Script Generation Parameters
+    gemini_api_key: Optional[str] = None
+    google_cloud_project: Optional[str] = None
+    google_cloud_location: str = "global"
+    gemini_script_model: str = "gemini-3.8-flash"
+    gemini_timeout_seconds: int = 60
+    gemini_max_retries: int = 3
+    script_generation_engine: str = "gemini"
+    script_narration_style: str = "teacher"  # "teacher" or "conversation"
+
+    # Phase 2B-1: Google Gemini TTS Narration Parameters
+    google_genai_use_enterprise: bool = True
+    gemini_tts_model: str = "gemini-3.8-flash-tts"
+    gemini_tts_lite_model: str = "gemini-3.8-flash-lite-tts"
+    gemini_tts_location: str = "global"
+    gemini_tts_language: str = "en-IN"
+    gemini_tts_enabled: bool = True
+    gemini_tts_teacher_voice: str = "Aoede"
+    gemini_tts_student_voice: str = "Puck"
+    gemini_tts_timeout_seconds: int = 60
+    gemini_tts_max_retries: int = 3
+    gemini_tts_api_key: Optional[str] = None
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(BACKEND_DIR / ".env"), str(PROJECT_ROOT / ".env"), ".env"),
         env_file_encoding="utf-8",
         extra="ignore"
     )

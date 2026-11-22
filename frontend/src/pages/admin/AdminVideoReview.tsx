@@ -209,7 +209,7 @@ export const AdminVideoReview: React.FC = () => {
 
   const scriptBadgeStatus = selectedVideo?.script_status === 'SCRIPT_APPROVED' ? 'approved' : (selectedVideo?.script_status || 'NOT_GENERATED');
   const renderBadgeStatus = selectedVideo?.render_status === 'RENDERED' ? 'completed' : (selectedVideo?.render_status || 'NOT_STARTED');
-  const isNeuralVoice = selectedVideo?.voice_quality === 'NEURAL' || (selectedVideo?.tts_engine && (selectedVideo.tts_engine.includes('neural') || selectedVideo.tts_engine.includes('elevenlabs')));
+  const isNeuralVoice = selectedVideo?.voice_quality === 'NEURAL' || (selectedVideo?.tts_engine && (selectedVideo.tts_engine.includes('neural') || selectedVideo.tts_engine.includes('elevenlabs') || selectedVideo.tts_engine.includes('gemini')));
 
   const bannerMessage = successMsg
     ? { text: successMsg, type: 'success' as const }
@@ -712,7 +712,7 @@ export const AdminVideoReview: React.FC = () => {
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                         <span style={{ color: 'var(--admin-text-secondary)' }}>TTS Provider:</span>
                         <span style={{ fontWeight: 600, color: 'var(--admin-text)' }}>
-                          {selectedVideo.tts_provider || (selectedVideo.tts_engine?.includes('elevenlabs') ? 'ElevenLabs' : selectedVideo.tts_engine?.includes('neural') ? 'Neural TTS' : 'Local Fallback')}
+                          {selectedVideo.tts_provider || (selectedVideo.tts_engine?.includes('gemini') ? 'Google Gemini TTS' : selectedVideo.tts_engine?.includes('elevenlabs') ? 'ElevenLabs' : selectedVideo.tts_engine?.includes('neural') ? 'Neural TTS' : 'Local Fallback')}
                         </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>

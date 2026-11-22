@@ -487,7 +487,7 @@ def test_25_safe_regeneration_does_not_silently_overwrite(client, auth_headers, 
 # ==============================================================================
 # TEST 26, 27, 28: Script engine abstraction, deterministic & LLM fallback
 # ==============================================================================
-def test_26_to_28_script_engine_abstraction_and_fallback(db_session):
+def test_26_to_28_script_engine_abstraction_and_fallback(db_session, monkeypatch):
     _, _, _, video = create_approved_video_plan(db_session, "Engine Test")
     mock_pages = [{"page_number": 50, "text": "Physics concepts regarding energy and motion."}]
 
@@ -497,6 +497,12 @@ def test_26_to_28_script_engine_abstraction_and_fallback(db_session):
     assert len(res["sections"]) >= 4
 
     # LLM engine without keys raises AIProviderUnavailableError
+    monkeypatch.setattr("app.services.google_ai_client.settings.gemini_api_key", None)
+    monkeypatch.setattr("app.services.google_ai_client.settings.google_cloud_project", None)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
     llm = LLMScriptGenerationEngine()
     with pytest.raises(AIProviderUnavailableError):
         llm.generate_script(video, mock_pages, 300)

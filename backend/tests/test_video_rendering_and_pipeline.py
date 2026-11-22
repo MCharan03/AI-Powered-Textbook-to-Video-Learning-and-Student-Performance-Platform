@@ -513,11 +513,11 @@ def test_28_missing_script_fails_safely(client, auth_headers, db_session):
 # ==============================================================================
 # TEST 29: Invalid MP4 is rejected
 # ==============================================================================
-def test_29_invalid_mp4_is_rejected():
+def test_29_invalid_mp4_is_rejected(tmp_path):
     renderer = LocalFFmpegVideoRenderer()
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
+    bad_path = str(tmp_path / "corrupt_test.mp4")
+    with open(bad_path, "wb") as tf:
         tf.write(b"NOT A REAL VIDEO")
-        bad_path = tf.name
 
     try:
         with pytest.raises(ValueError):

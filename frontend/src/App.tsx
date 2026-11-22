@@ -26,6 +26,7 @@ import { AdminScriptReview } from './pages/admin/AdminScriptReview';
 import { AdminVideoReview } from './pages/admin/AdminVideoReview';
 import { AdminQuizzes } from './pages/admin/AdminQuizzes';
 import { AdminVideoStudio } from './pages/admin/AdminVideoStudio';
+import { AdminPublishedContent } from './pages/admin/AdminPublishedContent';
 import { AdminSidebar } from './components/admin/AdminSidebar';
 import { AdminHeader } from './components/admin/AdminHeader';
 
@@ -244,6 +245,9 @@ const MainLayout: React.FC = () => {
       case 'admin-video-studio':
         current = 'Video Studio';
         break;
+      case 'admin-published-content':
+        current = 'Published Content';
+        break;
       case 'admin-pipeline':
         current = 'Processing Monitor';
         break;
@@ -338,6 +342,10 @@ const MainLayout: React.FC = () => {
       // Admin Portal - Consolidated One-Flow Video Studio
       case 'admin-video-studio':
         return <AdminVideoStudio onNavigate={handleNavigate} initialTextbookId={routeParams.textbookId} />;
+
+      // Admin Portal - Published Content & Live Materials
+      case 'admin-published-content':
+        return <AdminPublishedContent onNavigate={handleNavigate} />;
 
       // Admin Portal - Pipeline, Review, Settings
       case 'admin-pipeline':

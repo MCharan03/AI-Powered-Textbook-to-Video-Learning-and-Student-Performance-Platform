@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, ConfigDict, Field
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Union
 from datetime import datetime
 
 
@@ -428,6 +428,8 @@ class TextbookOut(BaseModel):
     status: str
     stage: int = 0
     subject_id: Optional[int] = None
+    source_type: str = "TEXTBOOK"
+    chapter_number: Optional[int] = None
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -449,6 +451,8 @@ class TextbookListItemOut(BaseModel):
     chapters_count: int = 0
     topics_count: int = 0
     subtopics_count: int = 0
+    source_type: str = "TEXTBOOK"
+    chapter_number: Optional[int] = None
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -593,6 +597,19 @@ class VideoPlanPatch(BaseModel):
     content_outline: Optional[List[str]] = None
 
 
+class VideoPlanCreate(BaseModel):
+    """PHASE 3 (Video Studio): admin-authored additional video plan for a topic."""
+    title: str
+    description: Optional[str] = None
+    sequence_number: Optional[int] = None
+    duration_seconds: int = 330
+    estimated_duration_seconds: Optional[int] = None
+    source_start_page: Optional[int] = None
+    source_end_page: Optional[int] = None
+    learning_objective: Optional[str] = None
+    content_outline: List[str] = []
+
+
 class VideoPlanRegenerationOut(BaseModel):
     topic_id: int
     topic_title: str
@@ -622,6 +639,9 @@ class ScriptSection(BaseModel):
     formula: Optional[str] = None
     diagram_description: Optional[str] = None
     animation_hint: Optional[str] = None
+    speaker: Optional[str] = "Teacher"
+    dialogue: Optional[List[Dict[str, str]]] = None
+    example_origin: Optional[str] = None  # textbook_direct, generative_analogy, generative_application
 
 
 class ScriptQualityBreakdown(BaseModel):
@@ -648,7 +668,9 @@ class ScriptOut(BaseModel):
     source_page_end: Optional[int] = None
     sections: List[ScriptSection] = []
     narration_text: Optional[str] = None
+    narration_style: Optional[str] = "teacher"
     warnings: List[str] = []
+    regeneration_feedback: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
@@ -660,6 +682,7 @@ class ScriptPatch(BaseModel):
     sections: Optional[List[ScriptSection]] = None
     quality_score: Optional[float] = None
     script_status: Optional[str] = None
+    narration_style: Optional[str] = None
 
 
 class ScriptRegenerationPreview(BaseModel):
@@ -675,6 +698,7 @@ class ScriptRegenerationPreview(BaseModel):
 class ScriptGenerateRequest(BaseModel):
     force_regenerate: bool = False
     engine: Optional[str] = None
+    narration_style: Optional[str] = None
 
 
 # ==================================================
@@ -705,6 +729,8 @@ class VideoRenderOut(BaseModel):
     video_id: int
     version_number: int = 1
     title: str
+    textbook_id: Optional[int] = None
+    textbook_title: Optional[str] = None
     subject_id: Optional[int] = None
     subject_name: Optional[str] = None
     chapter_title: Optional[str] = None
@@ -738,15 +764,20 @@ class VideoRenderOut(BaseModel):
     video_plan_status: Optional[str] = None
     rendered_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    # PHASE 3 (Video Studio): admin regeneration feedback
+    regeneration_feedback: Optional[str] = None
+    regeneration_requested_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
 
 class VideoGenerationStatusOut(BaseModel):
     video_id: int
     video_title: str
-    job_id: Optional[int] = None
+    job_id: Optional[Union[int, str]] = None
     job_status: str = "COMPLETED"
     current_stage: str = "COMPLETED"
+    stage_number: Optional[int] = 9
+    stage_name: Optional[str] = None
     progress: float = 100.0
     render_status: str = "RENDERED"
     video_status: str = "REVIEW"
@@ -754,6 +785,54 @@ class VideoGenerationStatusOut(BaseModel):
     video_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     error_message: Optional[str] = None
+    total_scenes: Optional[int] = None
+    completed_scenes: Optional[int] = None
+    current_scene: Optional[int] = None
+    elapsed_seconds: Optional[float] = None
+    estimated_remaining_seconds: Optional[float] = None
+    updated_at: Optional[datetime] = None
+    is_cancelled: Optional[bool] = False
+
+
+class VideoRenderingJobOut(BaseModel):
+    id: int
+    job_id: str
+    video_id: int
+    video_title: Optional[str] = None
+    current_stage: str
+    stage_number: int = 1
+    stage_name: str
+    progress: float = 0.0
+    total_scenes: int = 0
+    completed_scenes: int = 0
+    current_scene: int = 0
+    status: str
+    started_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    elapsed_seconds: float = 0.0
+    estimated_remaining_seconds: Optional[float] = None
+    error_message: Optional[str] = None
+    is_cancelled: bool = False
+    cancellation_reason: Optional[str] = None
+    output_video_url: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class VideoRenderingJobCancelRequest(BaseModel):
+    reason: Optional[str] = "Cancelled by administrator"
+
+
+class VideoRenderingJobCreateRequest(BaseModel):
+    video_id: int
+    force: bool = False
+    tts_engine: Optional[str] = None
+    voice: Optional[str] = None
+
+
+class CleanupExecuteRequest(BaseModel):
+    confirm: bool = False
+    create_backup: bool = True
 
 
 class VideoGenerateRequest(BaseModel):
@@ -768,6 +847,11 @@ class VideoRegenerateRequest(BaseModel):
     regenerate_video_only: bool = False
     tts_engine: Optional[str] = None
     voice: Optional[str] = None
+
+
+class VideoRegenerationFeedbackRequest(BaseModel):
+    """PHASE 3 (Video Studio): admin requests changes with a mandatory reason."""
+    feedback: str
 
 
 class VideoApproveRequest(BaseModel):

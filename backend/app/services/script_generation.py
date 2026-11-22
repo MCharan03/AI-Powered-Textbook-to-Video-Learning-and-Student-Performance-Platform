@@ -16,11 +16,11 @@ from ..models.models import (
 )
 from ..core.config import settings
 from ..services.pipeline_service import extract_pdf_pages
-
-
-class AIProviderUnavailableError(Exception):
-    """Raised when external LLM credentials are not configured."""
-    pass
+from .google_ai_client import (
+    GoogleAIClient,
+    AIProviderUnavailableError,
+    GeminiGenerationError,
+)
 
 
 # ==============================================================================
@@ -261,8 +261,9 @@ class DeterministicScriptGenerationEngine:
     - Enforces source grounding and traceability without external API cost.
     """
 
-    def __init__(self, words_per_minute: int = settings.narration_words_per_minute):
+    def __init__(self, words_per_minute: int = settings.narration_words_per_minute, narration_style: str = "teacher"):
         self.words_per_minute = words_per_minute
+        self.narration_style = narration_style
 
     def _extract_formulas_and_terms(self, text: str) -> List[Tuple[str, str]]:
         """Identifies mathematical formulas or technical equations and provides verbalization."""
@@ -295,8 +296,10 @@ class DeterministicScriptGenerationEngine:
         video: Video,
         source_pages: List[Dict[str, Any]],
         target_words: int,
-        academic_level: str = "Undergraduate / Grade 10-12"
+        academic_level: str = "Undergraduate / Grade 10-12",
+        narration_style: Optional[str] = None
     ) -> Dict[str, Any]:
+        style = (narration_style or self.narration_style or settings.script_narration_style).lower()
         combined_source_text = "\n\n".join(p.get("text", "") for p in source_pages if p.get("text"))
         page_numbers = [p.get("page_number") for p in source_pages if p.get("page_number")]
         start_p = min(page_numbers) if page_numbers else (video.source_start_page or 1)
@@ -336,8 +339,10 @@ class DeterministicScriptGenerationEngine:
             # ==================================================================
 
             # 1. INTRO (~71 words)
+            fb_text = (video.regeneration_feedback or "").strip()
+            fb_intro = f" In this revised lesson addressing review feedback ({fb_text}), let's focus on these core concepts." if fb_text else ""
             intro_narration = (
-                f"Welcome to this lesson on {video.title}. "
+                f"Welcome to this lesson on {video.title}.{fb_intro} "
                 f"In computer science, arrays are the most fundamental data structure used to organize and store collections of data. "
                 f"Documented across pages {start_p} to {end_p} of our textbook, understanding arrays is essential for writing fast, efficient code. "
                 f"Today, you will learn how static arrays allocate contiguous memory, how zero-based indexing enables instant retrieval, "
@@ -441,6 +446,7 @@ class DeterministicScriptGenerationEngine:
                 "title": "Concrete Example: Python Array Index Access",
                 "narration": code_narration,
                 "source_pages": [mid_page],
+                "example_origin": "textbook_direct",
                 "visual_type": "CODE_SNIPPET",
                 "visual_description": "Clean IDE code snippet showing array initialization and indexed access with terminal output highlighted.",
                 "on_screen_text": "arr = [10, 20, 30, 40, 50]\ntarget = arr[2]\nprint(target)  # Output: 30",
@@ -477,6 +483,7 @@ class DeterministicScriptGenerationEngine:
                 "title": "Worked Example: Dynamic Array Capacity Resizing",
                 "narration": worked_example_narration,
                 "source_pages": [mid_page, end_p],
+                "example_origin": "textbook_direct",
                 "visual_type": "BEFORE_AFTER",
                 "visual_description": "Visual diagram comparing full 4-element array before resize against doubled 8-element array after reallocation and copying.",
                 "on_screen_text": "Dynamic Array Resizing:\nCapacity 4 (Full) → Allocate Capacity 8 (Doubled) → Copy Elements & Append",
@@ -583,8 +590,9 @@ class DeterministicScriptGenerationEngine:
             })
 
             # 9. SUMMARY & QUICK KNOWLEDGE CHECK (~84 words)
+            fb_summary = f" Reviewer revision note: {fb_text}." if fb_text else ""
             summary_quiz_narration = (
-                f"In summary: arrays store elements contiguously in RAM, providing zero-based indexing and instant O of 1 access via address arithmetic, while dynamic resizing provides amortized O of 1 appends. "
+                f"In summary: arrays store elements contiguously in RAM, providing zero-based indexing and instant O of 1 access via address arithmetic, while dynamic resizing provides amortized O of 1 appends.{fb_summary} "
                 f"Now, for a quick knowledge check: In an array of length N equals 100, what is the index of the final element, and what is the access time complexity? "
                 f"The correct answer is index 99 with O of 1 constant time, because zero-based indexing means the last element is always N minus 1. Thank you for learning."
             )
@@ -667,17 +675,23 @@ class DeterministicScriptGenerationEngine:
                 return " ".join(parts), pages_used, grounded
 
             # ---------- 1. INTRO ----------
+            fb_text = (video.regeneration_feedback or "").strip()
             intro_budget = target_words * budgets[1]
             intro_entries = pick("definitions", intro_budget * 0.5, fallbacks=["general"])
             intro_pages: List[int] = []
             intro_grounded: List[str] = []
+            framing_lines = [
+                f"Hello everyone, and welcome to today's lesson on {video.title}.",
+            ]
+            if fb_text:
+                framing_lines.append(f"In this revised lesson, we specifically address the review feedback: {fb_text}.")
+            framing_lines.extend([
+                f"This session is part of our chapter on {chapter_name}, and we'll be drawing directly from pages {start_p} through {end_p} of the textbook.",
+                f"By the end, you should be able to {learning_obj[0].lower() + learning_obj[1:] if learning_obj else ''}".rstrip(".") + ".",
+                f"As we go, keep an eye on the key ideas we'll keep coming back to: {keyword_str}.",
+            ])
             intro_narration, intro_pages, intro_grounded = weave(
-                [
-                    f"Hello everyone, and welcome to today's lesson on {video.title}.",
-                    f"This session is part of our chapter on {chapter_name}, and we'll be drawing directly from pages {start_p} through {end_p} of the textbook.",
-                    f"By the end, you should be able to {learning_obj[0].lower() + learning_obj[1:] if learning_obj else ''}".rstrip(".") + ".",
-                    f"As we go, keep an eye on the key ideas we'll keep coming back to: {keyword_str}.",
-                ],
+                framing_lines,
                 intro_entries,
             )
             sections.append({
@@ -769,6 +783,7 @@ class DeterministicScriptGenerationEngine:
                 "title": f"Concrete Example: {video.title}",
                 "narration": example_narration,
                 "source_pages": example_pages or [mid_page],
+                "example_origin": "textbook_direct",
                 "visual_type": "CODE_SNIPPET" if any(k in title_context for k in ["code", "algorithm", "programming"]) else "SUMMARY_CHIPS",
                 "visual_description": "Concrete worked illustration using the actual quantities and scenarios from the textbook.",
                 "on_screen_text": "From the Textbook:\n" + "\n".join(
@@ -795,6 +810,7 @@ class DeterministicScriptGenerationEngine:
                 "title": "Worked Example & Analysis",
                 "narration": worked_narration,
                 "source_pages": worked_pages or [end_p],
+                "example_origin": "textbook_direct",
                 "visual_type": "SUMMARY_CHIPS",
                 "visual_description": "Structured walkthrough of the textbook's own numerical example with quantities and units.",
                 "on_screen_text": "Worked Problem:\n" + "\n".join(
@@ -932,6 +948,8 @@ class DeterministicScriptGenerationEngine:
                 f"The textbook treats {primary_term} as a purely decorative idea with no practical use.",
                 f"{primary_term.capitalize()} only applies when nothing measurable is involved.",
             ]
+            if fb_text:
+                summary_narration += f" Note on revisions addressing review feedback: {fb_text}."
             summary_narration += (
                 f" Now, a quick check before you go: {shorten_sentence(check_sentence, 20)} — which statement matches the textbook best? "
                 f"Pick the option that stays true to the definition on page {check_page}, and you've got it. "
@@ -977,9 +995,17 @@ class DeterministicScriptGenerationEngine:
                 if extra_parts:
                     # Fold remaining grounded content into the worked example section
                     sections[4]["narration"] += " " + " ".join(extra_parts)
+
+        # Ensure consistent speaker attribution & scene numbering
+        for s_idx, sec in enumerate(sections, start=1):
+            sec["scene_number"] = s_idx
+            sec.setdefault("speaker", "Student" if (style == "conversation" and s_idx % 2 == 0) else "Teacher")
+
         # Assemble full narration text
         full_narration = "\n\n".join(
-            f"[{s['type']} - {s['title']}]\n{s['narration']}" for s in sections
+            f"[{s['type']} - {s['title']}]\n({s.get('speaker', 'Teacher')}) {s['narration']}" if style == "conversation"
+            else f"[{s['type']} - {s['title']}]\n{s['narration']}"
+            for s in sections
         )
         actual_word_count = sum(len(s["narration"].split()) for s in sections)
 
@@ -996,47 +1022,91 @@ class DeterministicScriptGenerationEngine:
             "word_count": actual_word_count,
             "target_words": target_words,
             "generation_engine": "deterministic",
+            "narration_style": style,
             "warnings": warnings,
             "source_page_start": start_p,
-            "source_page_end": end_p
+            "source_page_end": end_p,
+            "regeneration_feedback": video.regeneration_feedback
         }
 
 
-class LLMScriptGenerationEngine:
-    """Future LLM-based educational script generation engine."""
+class GeminiScriptGenerationEngine:
+    """
+    Google Gemini educational script generation engine.
+    Implements ScriptGenerationEngine interface and uses the official
+    Google GenAI SDK to generate grounded educational scripts in Teacher
+    Narration or Teacher–Student Conversation styles.
+    """
 
-    def __init__(self, words_per_minute: int = settings.narration_words_per_minute):
+    def __init__(
+        self,
+        words_per_minute: int = settings.narration_words_per_minute,
+        narration_style: str = "teacher"
+    ):
         self.words_per_minute = words_per_minute
+        self.narration_style = narration_style
+        self.client = GoogleAIClient()
 
     def generate_script(
         self,
         video: Video,
         source_pages: List[Dict[str, Any]],
         target_words: int,
-        academic_level: str = "Undergraduate / Grade 10-12"
+        academic_level: str = "Undergraduate / Grade 10-12",
+        narration_style: Optional[str] = None
     ) -> Dict[str, Any]:
-        api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise AIProviderUnavailableError(
-                "External LLM API credentials not configured. Configure OPENAI_API_KEY or use deterministic engine."
-            )
-
-        # If API key were configured, invoke LLM with the Section 13 prompt
-        # In offline/test mode, fall back to deterministic engine
-        det_engine = DeterministicScriptGenerationEngine(self.words_per_minute)
-        result = det_engine.generate_script(video, source_pages, target_words, academic_level)
-        result["generation_engine"] = "llm"
-        return result
+        style = narration_style or self.narration_style or settings.script_narration_style
+        return self.client.generate_lesson_script(
+            video=video,
+            source_pages=source_pages,
+            target_words=target_words,
+            academic_level=academic_level,
+            narration_style=style,
+            regeneration_feedback=video.regeneration_feedback
+        )
 
 
-def get_script_generation_engine(engine_name: Optional[str] = None) -> ScriptGenerationEngine:
-    provider = (engine_name or os.environ.get("SCRIPT_GENERATION_ENGINE", "deterministic")).lower()
-    if provider == "llm":
-        try:
-            return LLMScriptGenerationEngine()
-        except AIProviderUnavailableError:
-            return DeterministicScriptGenerationEngine()
-    return DeterministicScriptGenerationEngine()
+class LLMScriptGenerationEngine:
+    """Legacy LLM interface pointing to GeminiScriptGenerationEngine."""
+
+    def __init__(
+        self,
+        words_per_minute: int = settings.narration_words_per_minute,
+        narration_style: str = "teacher"
+    ):
+        self.words_per_minute = words_per_minute
+        self.narration_style = narration_style
+
+    def generate_script(
+        self,
+        video: Video,
+        source_pages: List[Dict[str, Any]],
+        target_words: int,
+        academic_level: str = "Undergraduate / Grade 10-12",
+        narration_style: Optional[str] = None
+    ) -> Dict[str, Any]:
+        engine = GeminiScriptGenerationEngine(
+            words_per_minute=self.words_per_minute,
+            narration_style=narration_style or self.narration_style
+        )
+        return engine.generate_script(
+            video=video,
+            source_pages=source_pages,
+            target_words=target_words,
+            academic_level=academic_level,
+            narration_style=narration_style
+        )
+
+
+def get_script_generation_engine(
+    engine_name: Optional[str] = None,
+    narration_style: Optional[str] = None
+) -> ScriptGenerationEngine:
+    provider = (engine_name or os.environ.get("SCRIPT_GENERATION_ENGINE") or settings.script_generation_engine).lower()
+    style = narration_style or settings.script_narration_style
+    if provider in ["gemini", "llm"]:
+        return GeminiScriptGenerationEngine(narration_style=style)
+    return DeterministicScriptGenerationEngine(narration_style=style)
 
 
 # ==============================================================================
@@ -1187,6 +1257,15 @@ class ScriptQualityValidator:
             structure_score = max(20.0, structure_score - 40.0)
             specificity_score = max(20.0, specificity_score - 40.0)
 
+        # 8. Example attribution validation
+        for s in sections:
+            origin = s.get("example_origin")
+            pages = s.get("source_pages") or []
+            if origin in ["generative_analogy", "generative_application"] and pages:
+                warnings.append(f"Section {s.get('section_id') or s.get('title')} marked as '{origin}' must not cite source_pages: found {pages}.")
+            elif origin == "textbook_direct" and not pages:
+                warnings.append(f"Section {s.get('section_id') or s.get('title')} marked as 'textbook_direct' lacks source_pages citation.")
+
         # Weighted calculation
         overall_score = round(
             (objective_score * 0.20) +
@@ -1255,7 +1334,8 @@ class ScriptService:
         db: Session,
         video_id: int,
         force_regenerate: bool = False,
-        engine_name: Optional[str] = None
+        engine_name: Optional[str] = None,
+        narration_style: Optional[str] = None
     ) -> Dict[str, Any]:
         video = db.get(Video, video_id)
         if not video:
@@ -1270,7 +1350,9 @@ class ScriptService:
             )
 
         # 2. Check Idempotency: If script exists and not force, return existing
-        if video.script_data and not force_regenerate:
+        # But if the script was flagged for review/regeneration, generate fresh
+        is_needing_regeneration = (video.script_status or "").upper() == "NEEDS_REVIEW" and bool(video.regeneration_feedback)
+        if video.script_data and not force_regenerate and not is_needing_regeneration:
             return video.script_data
 
         # 3. ProcessingJob Setup
@@ -1310,11 +1392,12 @@ class ScriptService:
             job.progress = 55.0
             db.commit()
 
-            engine = get_script_generation_engine(engine_name)
+            engine = get_script_generation_engine(engine_name, narration_style=narration_style)
             generated = engine.generate_script(
                 video=video,
                 source_pages=source_pages,
-                target_words=target_words
+                target_words=target_words,
+                narration_style=narration_style
             )
 
             # 7. Quality & Grounding Validation
@@ -1349,6 +1432,7 @@ class ScriptService:
                 "title": generated["title"],
                 "script_status": script_status,
                 "generation_engine": generated["generation_engine"],
+                "narration_style": generated.get("narration_style", narration_style or settings.script_narration_style),
                 "quality_score": quality_score,
                 "quality_breakdown": breakdown,
                 "word_count": generated["word_count"],
@@ -1359,6 +1443,7 @@ class ScriptService:
                 "sections": generated["sections"],
                 "narration_text": generated["narration_text"],
                 "warnings": all_warnings,
+                "regeneration_feedback": video.regeneration_feedback,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }

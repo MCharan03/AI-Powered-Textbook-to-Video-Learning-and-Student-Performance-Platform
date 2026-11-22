@@ -335,10 +335,10 @@ def get_topic_videos(
             if not assigned:
                 raise HTTPException(status_code=403, detail="Student is not assigned to this subject")
 
-    # Only return APPROVED or PUBLISHED videos for students/parents
+    # Only return PUBLISHED videos for students/parents
     videos = db.query(Video).filter(Video.topic_id == topic_id)
     if user_role not in ["admin", "teacher"]:
-        videos = videos.filter(Video.status.in_(["APPROVED", "PUBLISHED", "approved", "published"]))
+        videos = videos.filter(Video.status.in_(["PUBLISHED", "published"]))
         videos = videos.filter(
             Video.render_status == "RENDERED",
             (Video.actual_duration_seconds > 0) | (Video.duration_seconds > 0)
@@ -520,7 +520,7 @@ def record_video_progress(
 # BUILD 07: STUDENT QUIZ, MASTERY, & ADAPTIVE REMEDIATION ENDPOINTS
 # ==============================================================================
 
-def serialize_student_quiz(quiz: Quiz) -> QuizOut:
+def serialize_student_quiz(quiz: Quiz, hide_explanation: bool = False) -> QuizOut:
     topic_title = quiz.topic.title if quiz.topic else None
     rev_str = quiz.review_status.value if hasattr(quiz.review_status, "value") else str(quiz.review_status)
     questions_out = [
@@ -530,7 +530,7 @@ def serialize_student_quiz(quiz: Quiz) -> QuizOut:
             question_text=q.question_text,
             options=q.options or [],
             objective=q.objective,
-            explanation=q.explanation,
+            explanation=None if hide_explanation else q.explanation,
             adaptive=q.adaptive or False,
             weak_concept=q.weak_concept,
             question_type=q.question_type or "MCQ",
@@ -733,7 +733,7 @@ def get_quiz_by_id(
     if not is_published and user_role not in ["admin", "teacher"]:
         raise HTTPException(status_code=404, detail="Quiz not yet approved or published")
 
-    return serialize_student_quiz(quiz)
+    return serialize_student_quiz(quiz, hide_explanation=(user_role == "student"))
 
 
 # 4d. POST /learn/quizzes/{id}/start (Start Quiz Attempt Session)
@@ -751,7 +751,7 @@ def start_quiz_session(
     if quiz.status.upper() != "PUBLISHED" and user_role not in ["admin", "teacher"]:
         raise HTTPException(status_code=404, detail="Quiz is not published")
 
-    return serialize_student_quiz(quiz)
+    return serialize_student_quiz(quiz, hide_explanation=(user_role == "student"))
 
 
 # 5. POST /learn/quizzes/{id}/attempts & POST /learn/quizzes/{id}/submit (Submit Quiz Attempt & Auto-Grade)

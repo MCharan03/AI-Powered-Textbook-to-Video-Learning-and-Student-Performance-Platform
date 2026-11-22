@@ -1,967 +1,818 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Zap,
-  Rocket,
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  X,
   BookOpen,
-  FileText,
-  Loader2,
-  Clock,
-  Mic,
+  Check,
   Clapperboard,
-  FileQuestion,
-  ListTree,
-  Sparkles,
-  Loader,
-  Tag as TagIcon,
+  ClipboardList,
+  Eye,
+  FileText,
+  Globe2,
+  Layers,
+  Loader2,
+  RefreshCw,
+  UploadCloud,
+  X,
 } from 'lucide-react';
+import { PageHeader } from '../../components/admin/PageHeader';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { StatusBadge } from '../../components/StatusBadge';
-import { LoadingState } from '../../components/admin/LoadingState';
-import { EmptyState } from '../../components/admin/EmptyState';
+import { EmptyHint, Banner, formatDuration, subTextStyle } from '../../components/admin/videoStudio/StudioUi';
+import { UploadPanel } from '../../components/admin/videoStudio/UploadPanel';
+import { TopicsPanel } from '../../components/admin/videoStudio/TopicsPanel';
+import { PlansPanel } from '../../components/admin/videoStudio/PlansPanel';
+import { ScriptsPanel } from '../../components/admin/videoStudio/ScriptsPanel';
+import { RenderPanel } from '../../components/admin/videoStudio/RenderPanel';
+import { ReviewPanel } from '../../components/admin/videoStudio/ReviewPanel';
+import { PublishPanel } from '../../components/admin/videoStudio/PublishPanel';
 import { api } from '../../lib/api';
-import { Textbook, SubjectItem, TextbookHierarchy, PipelineStatus } from '../../lib/types';
+import {
+  PipelineStatus,
+  SubjectItem,
+  Textbook,
+  TextbookHierarchy,
+  VideoPlan,
+  VideoRenderDetails,
+} from '../../lib/types';
 
 interface AdminVideoStudioProps {
   onNavigate: (route: string, params?: any) => void;
   initialTextbookId?: number;
 }
 
-interface QueuedUploadItem {
-  id: string;
-  file: File;
-  title: string;
-  subjectId?: number;
-  status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
-  textbookId?: number;
-  progressMessage?: string;
-  stage?: number;
-}
+const STEPS = [
+  { number: 1, label: 'Upload', hint: 'Textbook or chapter PDF', icon: UploadCloud },
+  { number: 2, label: 'Curriculum', hint: 'Extract & approve curriculum', icon: Layers },
+  { number: 3, label: 'Plans', hint: 'Dynamic video planning', icon: ClipboardList },
+  { number: 4, label: 'Scripts', hint: 'Teach, edit, approve', icon: FileText },
+  { number: 5, label: 'Render', hint: 'Real MP4 production', icon: Clapperboard },
+  { number: 6, label: 'Review', hint: 'Watch before publishing', icon: Eye },
+  { number: 7, label: 'Publish', hint: 'Explicit release to students', icon: Globe2 },
+];
 
-export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ onNavigate, initialTextbookId }) => {
-  const [activeStep, setActiveStep] = useState<number>(1);
-  const [fastTrack, setFastTrack] = useState<boolean>(true);
+const statusUpper = (status?: string | null) => (status || '').toUpperCase();
+
+/**
+ * Video Studio — the guided admin video production workflow.
+ *
+ * All work goes through the validated Phase 2 pipeline: upload → curriculum
+ * extraction → dynamic planning → script generation → real MP4 rendering →
+ * mandatory review → explicit publishing. Nothing is published automatically.
+ */
+export const AdminVideoStudio: React.FC<AdminVideoStudioProps> = ({ initialTextbookId }) => {
+  const [step, setStep] = useState(1);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
-  const [selectedSubjectId, setSelectedSubjectId] = useState<number | ''>('');
-
-  // Multi-upload queue state
-  const [queuedFiles, setQueuedFiles] = useState<QueuedUploadItem[]>([]);
-  const [activeTextbookId, setActiveTextbookId] = useState<number | null>(initialTextbookId || null);
-  const [activeTextbook, setActiveTextbook] = useState<Textbook | null>(null);
-
-  // Pipeline & Hierarchy state
+  const [textbooks, setTextbooks] = useState<Textbook[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [textbook, setTextbook] = useState<Textbook | null>(null);
   const [hierarchy, setHierarchy] = useState<TextbookHierarchy | null>(null);
-  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [publishing, setPublishing] = useState<boolean>(false);
-  const [publishSuccess, setPublishSuccess] = useState<boolean>(false);
-  const [publishedVideoList, setPublishedVideoList] = useState<any[]>([]);
+  const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
+  const [plans, setPlans] = useState<VideoPlan[]>([]);
+  const [videos, setVideos] = useState<VideoRenderDetails[]>([]);
+  const [selectedChapterIds, setSelectedChapterIds] = useState<number[]>([]);
+  const [bootLoading, setBootLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dashboardOpen, setDashboardOpen] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const autoSelectedRef = useRef<string | null>(null);
 
-  // Load subjects
-  useEffect(() => {
-    const fetchSubjects = async () => {
-      try {
-        const res = await api.listSubjects();
-        const list = res.items || [];
-        setSubjects(list);
-        if (list.length > 0 && selectedSubjectId === '') {
-          setSelectedSubjectId(list[0].id);
-        }
-      } catch (err) {
-        console.error('Failed to load subjects:', err);
-      }
-    };
-    fetchSubjects();
+  const loadTextbooks = useCallback(async () => {
+    try {
+      const list = await api.listTextbooks();
+      setTextbooks(list);
+      return list;
+    } catch (err: any) {
+      setError(err?.message || 'Could not load textbooks.');
+      return [];
+    }
   }, []);
 
-  // Load active textbook if specified
-  useEffect(() => {
-    if (activeTextbookId) {
-      loadActiveTextbookData(activeTextbookId);
-    }
-  }, [activeTextbookId]);
-
-  const loadActiveTextbookData = async (id: number) => {
+  const loadSubjects = useCallback(async () => {
     try {
-      setLoading(true);
-      const [tb, hier, status] = await Promise.all([
-        api.getTextbook(id).catch(() => null),
-        api.getTextbookHierarchy(id).catch(() => null),
-        api.getPipelineStatus(id).catch(() => null),
-      ]);
-      if (tb) setActiveTextbook(tb);
-      if (hier) setHierarchy(hier);
-      if (status) setPipelineStatus(status);
-
-      // Check if textbook is already completed/approved
-      if (tb?.status === 'APPROVED' || tb?.status === 'PUBLISHED' || status?.pipeline_status === 'completed') {
-        setActiveStep(5);
-      }
-    } catch (err) {
-      console.error('Error loading textbook details:', err);
-    } finally {
-      setLoading(false);
+      const res = await api.listSubjects({ page: 1, page_size: 200 });
+      setSubjects(res.items);
+    } catch {
+      // Subject assignment is optional for the workflow.
     }
-  };
+  }, []);
 
-  // Poll pipeline progress if active textbook is currently processing
-  useEffect(() => {
-    if (!activeTextbookId) return;
-    if (pipelineStatus?.pipeline_status !== 'running') return;
-
-    const interval = setInterval(async () => {
-      try {
-        const status = await api.getPipelineStatus(activeTextbookId);
-        setPipelineStatus(status);
-
-        if (status.pipeline_status === 'completed') {
-          clearInterval(interval);
-          const hier = await api.getTextbookHierarchy(activeTextbookId);
-          setHierarchy(hier);
-          if (fastTrack) {
-            setActiveStep(5); // Auto-advance straight to consolidated review!
-          }
-        }
-      } catch (e) {
-        console.error('Error polling pipeline status:', e);
+  const applyData = useCallback(
+    (tb: Textbook | null, hier: TextbookHierarchy | null, st: PipelineStatus | null, p: VideoPlan[], v: VideoRenderDetails[]) => {
+      setTextbook(tb);
+      setHierarchy(hier);
+      setPipeline(st);
+      setPlans(p);
+      setVideos(v);
+      if (tb && hier) {
+        const ids = (hier.chapters || []).map((c) => c.id);
+        setSelectedChapterIds((prev) => {
+          if (prev.length === 0) return ids;
+          // Newly extracted chapters are auto-selected only when the admin had
+          // previously selected everything (the default).
+          const allPreviouslySelected = prev.length > 0 && prev.every((id) => ids.includes(id));
+          return allPreviouslySelected ? ids : prev.filter((id) => ids.includes(id));
+        });
       }
-    }, 2500);
+    },
+    []
+  );
 
-    return () => clearInterval(interval);
-  }, [activeTextbookId, pipelineStatus?.pipeline_status, fastTrack]);
+  const fetchStudioData = useCallback(async (id: number) => {
+    const [tb, hier, st, p, v] = await Promise.all([
+      api.getTextbook(id).catch(() => null),
+      api.getTextbookHierarchy(id).catch(() => null),
+      api.getPipelineStatus(id).catch(() => null),
+      api.listVideoPlans({ textbook_id: id }).catch(() => [] as VideoPlan[]),
+      api.listVideos({ textbook_id: id }).catch(() => [] as VideoRenderDetails[]),
+    ]);
+    return { tb: tb as Textbook | null, hier: hier as TextbookHierarchy | null, st: st as PipelineStatus | null, p, v };
+  }, []);
 
-  // Handle multi-file selection
-  const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const newItems: QueuedUploadItem[] = Array.from(files)
-      .filter((file) => file.name.toLowerCase().endsWith('.pdf'))
-      .map((file) => ({
-        id: Math.random().toString(36).substring(2, 9),
-        file,
-        title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
-        subjectId: selectedSubjectId ? Number(selectedSubjectId) : undefined,
-        status: 'pending',
-      }));
-
-    setQueuedFiles((prev) => [...prev, ...newItems]);
-  };
-
-  // Remove queued file
-  const removeQueuedFile = (id: string) => {
-    setQueuedFiles((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  // Start batch upload & automatically run pipeline for each file
-  const handleUploadAndRunAll = async () => {
-    if (queuedFiles.length === 0) return;
-
-    setLoading(true);
-    for (let i = 0; i < queuedFiles.length; i++) {
-      const item = queuedFiles[i];
-      if (item.status === 'completed') continue;
-
-      try {
-        // Update item state to uploading
-        setQueuedFiles((prev) =>
-          prev.map((it) => (it.id === item.id ? { ...it, status: 'uploading', progressMessage: 'Uploading PDF to server...' } : it))
-        );
-
-        // Upload PDF
-        const uploaded = await api.uploadTextbook(
-          item.file,
-          item.title,
-          item.subjectId || (selectedSubjectId ? Number(selectedSubjectId) : undefined)
-        );
-
-        // Update item with textbookId and trigger pipeline automatically
-        setQueuedFiles((prev) =>
-          prev.map((it) =>
-            it.id === item.id
-              ? { ...it, textbookId: uploaded.id, status: 'processing', progressMessage: 'AI Pipeline triggered (Stages 1–5)...' }
-              : it
-          )
-        );
-
-        // Auto-trigger pipeline
-        await api.triggerPipeline(uploaded.id);
-
-        // Set as active textbook for real-time tracking
-        setActiveTextbookId(uploaded.id);
-        setActiveTextbook(uploaded);
-
-        // Update item state
-        setQueuedFiles((prev) =>
-          prev.map((it) =>
-            it.id === item.id
-              ? { ...it, status: 'processing', progressMessage: 'Synthesizing real topics & videos...' }
-              : it
-          )
-        );
-      } catch (err: any) {
-        setQueuedFiles((prev) =>
-          prev.map((it) =>
-            it.id === item.id ? { ...it, status: 'error', progressMessage: err.message || 'Upload failed' } : it
-          )
-        );
-      }
-    }
-    setLoading(false);
-  };
-
-  // Step 5: Final One-Click Consolidated Publish
-  const handleFinalPublish = async () => {
-    if (!activeTextbookId) return;
+  const refreshStudio = useCallback(async () => {
+    if (!selectedId) return;
     try {
-      setPublishing(true);
-      await api.approveTextbookCurriculum(activeTextbookId);
-      setPublishSuccess(true);
-      await loadActiveTextbookData(activeTextbookId);
+      const data = await fetchStudioData(selectedId);
+      applyData(data.tb, data.hier, data.st, data.p, data.v);
     } catch (err: any) {
-      alert(`Publishing failed: ${err.message}`);
-    } finally {
-      setPublishing(false);
+      setError(err?.message || 'Could not refresh the studio data.');
     }
+  }, [selectedId, fetchStudioData, applyData]);
+
+  const suggestStep = useCallback(
+    (
+      hier: TextbookHierarchy | null,
+      p: VideoPlan[],
+      v: VideoRenderDetails[],
+      chapterIds: number[]
+    ): number => {
+      if (!hier || (hier.chapters || []).length === 0) return 2;
+      const chapterApproved = ['APPROVED', 'PUBLISHED'].includes(statusUpper(hier.status));
+      if (!chapterApproved) return 2;
+
+      const scopedPlans = p.filter((plan) => !plan.chapter_id || chapterIds.includes(plan.chapter_id));
+      if (scopedPlans.length === 0) return 3;
+      if (scopedPlans.some((plan) => !['APPROVED', 'PUBLISHED'].includes(statusUpper(plan.status)))) return 3;
+
+      const byId = new Map<number, VideoRenderDetails>();
+      v.forEach((video) => byId.set(video.video_id || video.id, video));
+      if (scopedPlans.some((plan) => statusUpper(byId.get(plan.id)?.script_status) !== 'SCRIPT_APPROVED')) return 4;
+      if (scopedPlans.some((plan) => statusUpper(byId.get(plan.id)?.render_status) !== 'RENDERED')) return 5;
+      if (scopedPlans.some((plan) => !['APPROVED', 'PUBLISHED'].includes(statusUpper(byId.get(plan.id)?.status)))) return 6;
+      if (scopedPlans.some((plan) => statusUpper(byId.get(plan.id)?.status) !== 'PUBLISHED')) return 7;
+      return 7;
+    },
+    []
+  );
+
+  const selectTextbook = useCallback(
+    async (id: number, opts?: { advance?: boolean }) => {
+      setSelectedId(id);
+      setDataLoading(true);
+      setError(null);
+      setNotice(null);
+      try {
+        const data = await fetchStudioData(id);
+        applyData(data.tb, data.hier, data.st, data.p, data.v);
+        const ids = (data.hier?.chapters || []).map((c) => c.id);
+        setSelectedChapterIds(ids);
+        if (opts?.advance !== false) {
+          setStep(suggestStep(data.hier, data.p, data.v, ids));
+        }
+      } catch (err: any) {
+        setError(err?.message || 'Could not open this textbook.');
+      } finally {
+        setDataLoading(false);
+      }
+    },
+    [fetchStudioData, applyData, suggestStep]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setBootLoading(true);
+      await Promise.all([loadSubjects(), loadTextbooks()]);
+      if (!cancelled) setBootLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSubjects, loadTextbooks]);
+
+  useEffect(() => {
+    const urlId = typeof window !== 'undefined' ? Number(new URLSearchParams(window.location.search).get('textbookId')) || undefined : undefined;
+    const targetId = initialTextbookId || urlId;
+    if (targetId && autoSelectedRef.current !== String(targetId)) {
+      autoSelectedRef.current = String(targetId);
+      selectTextbook(targetId);
+    }
+  }, [initialTextbookId, selectTextbook]);
+
+  const isPipelineActive =
+    !!selectedId &&
+    (['UPLOADED', 'QUEUED', 'PROCESSING'].includes(statusUpper(textbook?.status)) ||
+      (!!pipeline && (pipeline.progress ?? 0) < 100 && !['COMPLETED', 'APPROVED', 'PUBLISHED', 'FAILED'].includes(statusUpper(pipeline.status))));
+
+  useEffect(() => {
+    if (!selectedId || !isPipelineActive) return;
+    let cancelled = false;
+    const timer = window.setInterval(async () => {
+      try {
+        const st = await api.getPipelineStatus(selectedId);
+        if (cancelled) return;
+        setPipeline(st);
+        const finished =
+          (st.progress ?? 0) >= 100 ||
+          ['COMPLETED', 'APPROVED', 'PUBLISHED', 'FAILED'].includes(statusUpper(st.status));
+        if (finished) {
+          window.clearInterval(timer);
+          const data = await fetchStudioData(selectedId);
+          if (cancelled) return;
+          applyData(data.tb, data.hier, data.st, data.p, data.v);
+          if ((data.hier?.chapters || []).length > 0) {
+            setSelectedChapterIds((prev) => (prev.length === 0 ? (data.hier?.chapters || []).map((c) => c.id) : prev));
+            setNotice('Curriculum extraction finished. Review and edit the topics in Step 2.');
+          } else if (statusUpper(st.status) === 'FAILED') {
+            setError(st.error_message || 'Curriculum extraction failed. Check the processing dashboard for details.');
+          }
+          await loadTextbooks();
+        }
+      } catch {
+        // Ignore transient polling errors.
+      }
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [selectedId, isPipelineActive, fetchStudioData, applyData, loadTextbooks]);
+
+  const scopedPlans = useMemo(
+    () => plans.filter((plan) => !plan.chapter_id || selectedChapterIds.includes(plan.chapter_id)),
+    [plans, selectedChapterIds]
+  );
+
+  const scopedVideos = useMemo(() => {
+    const ids = new Set(scopedPlans.map((plan) => plan.id));
+    return videos.filter((video) => ids.has(video.video_id || video.id));
+  }, [videos, scopedPlans]);
+
+  const videosById = useMemo(() => {
+    const map = new Map<number, VideoRenderDetails>();
+    scopedVideos.forEach((video) => map.set(video.video_id || video.id, video));
+    return map;
+  }, [scopedVideos]);
+
+  const stepDone = useMemo(() => {
+    const chapters = hierarchy?.chapters || [];
+    const curriculumApproved =
+      chapters.length > 0 && ['APPROVED', 'PUBLISHED'].includes(statusUpper(hierarchy?.status));
+    const plansApproved =
+      scopedPlans.length > 0 && scopedPlans.every((p) => ['APPROVED', 'PUBLISHED'].includes(statusUpper(p.status)));
+    const scriptsApproved =
+      scopedPlans.length > 0 &&
+      scopedPlans.every((p) => statusUpper(videosById.get(p.id)?.script_status) === 'SCRIPT_APPROVED');
+    const allRendered =
+      scopedPlans.length > 0 &&
+      scopedPlans.every((p) => statusUpper(videosById.get(p.id)?.render_status) === 'RENDERED');
+    const allApproved =
+      scopedPlans.length > 0 &&
+      scopedPlans.every((p) => ['APPROVED', 'PUBLISHED'].includes(statusUpper(videosById.get(p.id)?.status)));
+    const allPublished =
+      scopedPlans.length > 0 && scopedPlans.every((p) => statusUpper(videosById.get(p.id)?.status) === 'PUBLISHED');
+
+    return {
+      1: !!selectedId,
+      2: curriculumApproved,
+      3: plansApproved,
+      4: scriptsApproved,
+      5: allRendered,
+      6: allApproved,
+      7: allPublished,
+    } as Record<number, boolean>;
+  }, [hierarchy, scopedPlans, videosById, selectedId]);
+
+  const nextStep = useMemo(() => {
+    if (!selectedId) return 1;
+    for (const s of STEPS) {
+      if (!stepDone[s.number]) return s.number;
+    }
+    return 7;
+  }, [selectedId, stepDone]);
+
+  const selectedTextbook = useMemo(() => textbooks.find((t) => t.id === selectedId) || textbook, [textbooks, selectedId, textbook]);
+
+  const handleUploaded = async (id: number) => {
+    setNotice('PDF uploaded. Curriculum extraction is running — progress is shown in the dashboard.');
+    await loadTextbooks();
+    await selectTextbook(id, { advance: false });
+    setStep(2);
   };
 
-  const steps = [
-    { number: 1, title: 'Upload & Queue', subtitle: 'Batch PDF Ingestion' },
-    { number: 2, title: 'Curriculum Review', subtitle: 'Chapters & Real Topics' },
-    { number: 3, title: 'Video Plans', subtitle: '5-Min Topic Segments' },
-    { number: 4, title: 'Scripts & Narration', subtitle: 'Narration & Audio' },
-    { number: 5, title: 'Review & Publish', subtitle: 'Consolidated Approval' },
-  ];
+  const toggleChapter = (chapterId: number) => {
+    setSelectedChapterIds((prev) =>
+      prev.includes(chapterId) ? prev.filter((id) => id !== chapterId) : [...prev, chapterId]
+    );
+  };
+
+  const selectAllChapters = () => {
+    const chapters = hierarchy?.chapters || [];
+    setSelectedChapterIds((prev) => (prev.length === chapters.length ? [] : chapters.map((c) => c.id)));
+  };
+
+  const renderStep = () => {
+    if (step === 1) {
+      return <UploadPanel subjects={subjects} onUploaded={handleUploaded} />;
+    }
+
+    if (!selectedId) {
+      return (
+        <SurfacePanel>
+          <EmptyHint
+            title="No source material selected"
+            description="Upload a textbook or chapter PDF in Step 1, or select an existing textbook from the processing dashboard."
+            action={
+              <button type="button" className="adm-btn adm-btn-primary adm-btn-sm" onClick={() => setStep(1)}>
+                Go to upload
+              </button>
+            }
+          />
+        </SurfacePanel>
+      );
+    }
+
+    if (step === 2) {
+      return (
+        <TopicsPanel
+          hierarchy={hierarchy}
+          loading={dataLoading}
+          selectedChapterIds={selectedChapterIds}
+          onToggleChapter={toggleChapter}
+          onSelectAll={selectAllChapters}
+          onRefresh={refreshStudio}
+          onApproved={() => setStep(3)}
+        />
+      );
+    }
+
+    if (step === 3) {
+      return (
+        <PlansPanel
+          hierarchy={hierarchy}
+          selectedChapterIds={selectedChapterIds}
+          plans={scopedPlans}
+          loading={dataLoading}
+          onRefresh={refreshStudio}
+          onNext={() => setStep(4)}
+          onBack={() => setStep(2)}
+        />
+      );
+    }
+
+    if (step === 4) {
+      return (
+        <ScriptsPanel
+          plans={scopedPlans}
+          videos={scopedVideos}
+          loading={dataLoading}
+          onRefresh={refreshStudio}
+          onNext={() => setStep(5)}
+          onBack={() => setStep(3)}
+        />
+      );
+    }
+
+    if (step === 5) {
+      return (
+        <RenderPanel
+          plans={scopedPlans}
+          videos={scopedVideos}
+          loading={dataLoading}
+          onRefresh={refreshStudio}
+          onNext={() => setStep(6)}
+          onBack={() => setStep(4)}
+        />
+      );
+    }
+
+    if (step === 6) {
+      return (
+        <ReviewPanel
+          videos={scopedVideos}
+          loading={dataLoading}
+          onRefresh={refreshStudio}
+          onNext={() => setStep(7)}
+          onBack={() => setStep(5)}
+          onGoToScripts={() => setStep(4)}
+        />
+      );
+    }
+
+    return (
+      <PublishPanel
+        videos={scopedVideos}
+        loading={dataLoading}
+        onRefresh={refreshStudio}
+        onBack={() => setStep(6)}
+        onGoToReview={() => setStep(6)}
+      />
+    );
+  };
+
+  const activeStepMeta = STEPS[step - 1];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1280px', margin: '0 auto' }}>
-      {/* Top Header & Fast Track Toggle */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--admin-text)', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '-0.01em' }}>
-              <Zap size={20} style={{ color: 'var(--admin-primary)' }} />
-              Video Creation Studio
-            </h1>
-            <span
-              className="adm-badge"
-              style={{
-                backgroundColor: 'var(--admin-primary-soft)',
-                color: 'var(--admin-primary)',
-                border: '1px solid var(--admin-border)',
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <PageHeader
+        title="Video Studio"
+        description="Turn a textbook or chapter into reviewed, student-ready videos. Every stage is explicit: nothing is published without your approval."
+        actions={
+          <>
+            <select
+              value={selectedId ?? ''}
+              onChange={(e) => {
+                const id = Number(e.target.value);
+                if (id) selectTextbook(id);
+                else {
+                  setSelectedId(null);
+                  setTextbook(null);
+                  setHierarchy(null);
+                  setPipeline(null);
+                  setPlans([]);
+                  setVideos([]);
+                  setSelectedChapterIds([]);
+                }
               }}
+              className="adm-input"
+              style={{ minWidth: '220px', maxWidth: '320px' }}
+              aria-label="Select source textbook"
             >
-              One-Flow Pipeline
-            </span>
-          </div>
-          <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', marginTop: '4px', maxWidth: '640px' }}>
-            Upload textbooks, extract actual topics directly from your PDF content, and synthesize video lessons one after another.
-          </p>
-        </div>
+              <option value="">Select a textbook / chapter…</option>
+              {textbooks.map((tb) => (
+                <option key={tb.id} value={tb.id}>
+                  {tb.title}
+                  {tb.source_type === 'CHAPTER' ? ' (chapter)' : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="adm-btn adm-btn-ghost adm-btn-sm"
+              onClick={async () => {
+                await loadTextbooks();
+                await refreshStudio();
+              }}
+              disabled={bootLoading}
+            >
+              {bootLoading ? <Loader2 size={13} /> : <RefreshCw size={13} />} Refresh
+            </button>
+          </>
+        }
+      />
 
-        {/* Fast-Track Auto-Advance Toggle */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '8px 16px',
-              backgroundColor: fastTrack ? 'var(--admin-success-soft)' : 'var(--admin-surface)',
-              border: `1px solid ${fastTrack ? 'var(--admin-success)' : 'var(--admin-border)'}`,
-              borderRadius: 'var(--radius-lg)',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-            onClick={() => setFastTrack(!fastTrack)}
-          >
-            <input
-              type="checkbox"
-              checked={fastTrack}
-              onChange={(e) => setFastTrack(e.target.checked)}
-              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-              aria-label="Auto-advance (fast-track)"
-            />
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: fastTrack ? 'var(--admin-success)' : 'var(--admin-text)',
-                }}
-              >
-                <Zap size={13} />
-                Auto-Advance (Fast-Track)
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
-                {fastTrack ? 'Auto-runs all 5 stages straight to Final Review' : 'Manual step-by-step confirmation'}
-              </div>
-            </div>
-          </div>
-      </div>
+      {error && (
+        <Banner tone="error" onDismiss={() => setError(null)}>
+          {error}
+        </Banner>
+      )}
+      {notice && (
+        <Banner tone="success" onDismiss={() => setNotice(null)}>
+          {notice}
+        </Banner>
+      )}
 
-      {/* Stepper Progress Bar */}
-      <SurfacePanel>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', flexWrap: 'wrap', gap: '8px' }}>
-          {steps.map((st) => {
-            const isCompleted = activeStep > st.number;
-            const isCurrent = activeStep === st.number;
+      {/* Guided stepper */}
+      <SurfacePanel style={{ padding: '12px 14px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'stretch',
+            gap: '6px',
+            overflowX: 'auto',
+            paddingBottom: '2px',
+          }}
+        >
+          {STEPS.map((s, idx) => {
+            const active = s.number === step;
+            const done = stepDone[s.number];
+            const Icon = s.icon;
             return (
-              <div
-                key={st.number}
-                onClick={() => {
-                  if (activeTextbookId || st.number === 1) setActiveStep(st.number);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  cursor: activeTextbookId || st.number === 1 ? 'pointer' : 'not-allowed',
-                  opacity: activeTextbookId || st.number === 1 ? 1 : 0.5,
-                  padding: '6px 12px',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: isCurrent ? 'var(--admin-primary-soft)' : 'transparent',
-                }}
-              >
-                <div
+              <React.Fragment key={s.number}>
+                {idx > 0 && (
+                  <div
+                    style={{
+                      width: '14px',
+                      minWidth: '14px',
+                      alignSelf: 'center',
+                      height: '1px',
+                      backgroundColor: done || stepDone[STEPS[idx - 1].number] ? 'var(--admin-success)' : 'var(--admin-border)',
+                    }}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setStep(s.number)}
+                  title={`${s.label} — ${s.hint}`}
                   style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    backgroundColor: isCompleted
-                      ? 'var(--admin-success)'
-                      : isCurrent
-                      ? 'var(--admin-primary)'
-                      : 'var(--admin-surface-raised)',
-                    color: isCompleted || isCurrent ? '#FFFFFF' : 'var(--admin-text-secondary)',
+                    flex: '1 0 108px',
+                    minWidth: '108px',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 700,
-                    fontSize: '13px',
-                    border: isCurrent ? '2px solid var(--admin-primary)' : '1px solid var(--admin-border)',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    border: `1px solid ${active ? 'var(--admin-primary)' : 'transparent'}`,
+                    backgroundColor: active ? 'var(--admin-primary-soft)' : 'transparent',
+                    cursor: 'pointer',
+                    textAlign: 'left',
                   }}
                 >
-                  {isCompleted ? <Check size={15} strokeWidth={3} /> : st.number}
-                </div>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: isCurrent ? 'var(--admin-primary)' : 'var(--admin-text)' }}>
-                    {st.title}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>{st.subtitle}</div>
-                </div>
-              </div>
+                  <span
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      backgroundColor: done ? 'var(--admin-success-soft)' : active ? 'var(--admin-primary)' : 'var(--admin-surface-raised)',
+                      color: done ? 'var(--admin-success)' : active ? '#fff' : 'var(--admin-text-secondary)',
+                      border: done || active ? 'none' : '1px solid var(--admin-border)',
+                    }}
+                  >
+                    {done ? <Check size={13} /> : <Icon size={13} />}
+                  </span>
+                  <span style={{ minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: 'block',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: active ? 'var(--admin-primary)' : 'var(--admin-text)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {s.number}. {s.label}
+                    </span>
+                    <span
+                      style={{
+                        display: 'block',
+                        fontSize: '10px',
+                        color: 'var(--admin-text-secondary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: '130px',
+                      }}
+                    >
+                      {s.hint}
+                    </span>
+                  </span>
+                </button>
+              </React.Fragment>
             );
           })}
         </div>
+
+        {selectedId && nextStep !== step && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '10px',
+              flexWrap: 'wrap',
+              marginTop: '10px',
+              paddingTop: '10px',
+              borderTop: '1px solid var(--admin-border)',
+            }}
+          >
+            <span style={{ fontSize: '11.5px', color: 'var(--admin-text-secondary)' }}>
+              Next action: <strong style={{ color: 'var(--admin-text)' }}>{STEPS[nextStep - 1].label}</strong> — {STEPS[nextStep - 1].hint}
+            </span>
+            <button type="button" className="adm-btn adm-btn-ghost adm-btn-sm" onClick={() => setStep(nextStep)}>
+              Go to Step {nextStep}
+            </button>
+          </div>
+        )}
       </SurfacePanel>
 
-      {/* STEP 1: Upload & Queue */}
-      {activeStep === 1 && (
-        <SurfacePanel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-              <div>
-                <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--admin-text)' }}>
-                  1. Select & Upload Textbook PDF(s)
-                </h2>
-                <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                  Select one or multiple files. The 6-stage extraction and video pipeline will execute automatically for each.
-                </p>
-              </div>
-
-              {/* Subject Selector */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', fontWeight: 600 }} htmlFor="studio-subject">
-                  Subject:
-                </label>
-                <select
-                  id="studio-subject"
-                  className="adm-select"
-                  style={{ width: 'auto', minWidth: '180px' }}
-                  value={selectedSubjectId}
-                  onChange={(e) => setSelectedSubjectId(Number(e.target.value))}
-                >
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} {s.class ? `(Class ${s.class})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+      {/* Processing dashboard */}
+      <SurfacePanel style={{ padding: '14px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <BookOpen size={15} style={{ color: 'var(--admin-primary)' }} />
+              <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--admin-text)' }}>Processing dashboard</span>
+              <span style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
+                {textbooks.length} source{textbooks.length !== 1 ? 's' : ''}
+              </span>
             </div>
+            <div style={subTextStyle}>Textbook and chapter jobs with their current extraction stage.</div>
+          </div>
+          <button type="button" className="adm-btn adm-btn-ghost adm-btn-sm" onClick={() => setDashboardOpen((o) => !o)}>
+            {dashboardOpen ? 'Hide' : 'Show'}
+          </button>
+        </div>
 
-            {/* Drop Zone */}
-            <div
-              style={{
-                border: '2px dashed var(--admin-border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: '40px 20px',
-                textAlign: 'center',
-                backgroundColor: 'var(--admin-surface-raised)',
-                cursor: 'pointer',
-              }}
-              onClick={() => document.getElementById('studio-file-input')?.click()}
-            >
-              <input
-                id="studio-file-input"
-                type="file"
-                multiple
-                accept=".pdf,application/pdf"
-                style={{ display: 'none' }}
-                onChange={handleFilesSelected}
-              />
-              <div
-                style={{
-                  width: '44px',
-                  height: '44px',
-                  borderRadius: '999px',
-                  backgroundColor: 'var(--admin-primary-soft)',
-                  color: 'var(--admin-primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 8px auto',
-                }}
-              >
-                <BookOpen size={20} />
+        {dashboardOpen && (
+          <div style={{ marginTop: '12px' }}>
+            {bootLoading ? (
+              <div style={{ fontSize: '12.5px', color: 'var(--admin-text-secondary)', padding: '8px 0' }}>
+                <Loader2 size={13} className="spin" style={{ animation: 'spin 1s linear infinite' }} /> Loading sources…
               </div>
-              <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--admin-text)' }}>
-                Click to browse or drag & drop textbook PDFs here
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
-                Supports single or multiple textbooks simultaneously (Up to 100MB per file)
-              </div>
-            </div>
-
-            {/* Queued Items List */}
-            {queuedFiles.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)' }}>
-                  Selected Files for Ingestion ({queuedFiles.length}):
-                </h3>
-                {queuedFiles.map((item) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '12px 16px',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: 'var(--admin-surface-raised)',
-                      border: '1px solid var(--admin-border)',
-                      gap: '12px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                      <FileText size={18} style={{ color: 'var(--admin-text-secondary)', flexShrink: 0 }} />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)' }}>{item.title}</div>
-                        <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)' }}>
-                          {(item.file.size / (1024 * 1024)).toFixed(2)} MB • {item.progressMessage || 'Ready to process'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-                      {item.status === 'processing' && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--admin-primary)', fontWeight: 600 }}>
-                          <Loader2 size={13} />
-                          Synthesizing Curriculum…
-                        </span>
-                      )}
-                      {item.status === 'completed' && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--admin-success)', fontWeight: 600 }}>
-                          <CheckCircle2 size={13} />
-                          Completed
-                        </span>
-                      )}
-                      {item.status === 'pending' && (
-                        <button
-                          type="button"
-                          onClick={() => removeQueuedFile(item.id)}
-                          aria-label={`Remove ${item.title} from queue`}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--admin-error)',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            padding: '4px',
-                            borderRadius: 'var(--radius-sm)',
-                          }}
-                        >
-                          <X size={15} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                <button
-                  type="button"
-                  className="adm-btn adm-btn-primary"
-                  onClick={handleUploadAndRunAll}
-                  disabled={loading}
-                  style={{ marginTop: '10px', alignSelf: 'flex-start', padding: '10px 24px' }}
-                >
-                  {loading ? <Loader size={15} /> : <Rocket size={15} />}
-                  {loading ? 'Processing Queue…' : 'Upload & Run 6-Stage Pipeline for All'}
-                </button>
-              </div>
-            )}
-
-            {/* Currently Processing Textbook Monitor */}
-            {activeTextbookId && pipelineStatus && (
-              <div
-                style={{
-                  marginTop: '16px',
-                  padding: '16px',
-                  borderRadius: 'var(--radius-lg)',
-                  backgroundColor: 'var(--admin-primary-soft)',
-                  border: '1px solid var(--admin-border)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--admin-primary)', fontSize: '14px' }}>
-                      <Loader2 size={14} />
-                      Active Extraction: #{activeTextbookId} {activeTextbook?.title || 'Textbook'}
-                    </div>
-                    <StatusBadge status={pipelineStatus.pipeline_status} />
-                  </div>
-                  <button type="button" className="adm-btn adm-btn-primary adm-btn-sm" onClick={() => setActiveStep(2)}>
-                    View Real Curriculum Hierarchy
-                    <ArrowRight size={13} />
+            ) : textbooks.length === 0 ? (
+              <EmptyHint
+                title="No textbooks or chapters yet"
+                description="Upload a complete textbook or an individual chapter PDF in Step 1 to start the pipeline."
+                action={
+                  <button type="button" className="adm-btn adm-btn-primary adm-btn-sm" onClick={() => setStep(1)}>
+                    <UploadCloud size={12} /> Upload a PDF
                   </button>
-                </div>
-
-                {/* Stages progress bar */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
-                  {[
-                    { num: 1, name: 'PDF Ingestion & OCR' },
-                    { num: 2, name: 'Topic Extraction' },
-                    { num: 3, name: '5-Min Segmentation' },
-                    { num: 4, name: 'Script & Video' },
-                    { num: 5, name: 'Quiz Generation' },
-                  ].map((s) => {
-                    const stLog = pipelineStatus.stages.find((x) => x.stage === s.num);
-                    const isDone = stLog?.status === 'completed';
-                    return (
-                      <div
-                        key={s.num}
-                        style={{
-                          padding: '8px',
-                          borderRadius: 'var(--radius-sm)',
-                          backgroundColor: isDone ? 'var(--admin-success-soft)' : 'var(--admin-surface)',
-                          border: `1px solid ${isDone ? 'var(--admin-success)' : 'var(--admin-border)'}`,
-                          fontSize: '11px',
-                          textAlign: 'center',
-                          color: isDone ? 'var(--admin-success)' : 'var(--admin-text-secondary)',
-                          fontWeight: isDone ? 700 : 500,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '5px',
-                        }}
-                      >
-                        {isDone ? <Check size={11} strokeWidth={3} /> : <span>{s.num}.</span>}
-                        {s.name}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </SurfacePanel>
-      )}
-
-      {/* STEP 2: Curriculum Review (Real PDF Extracted Hierarchy) */}
-      {activeStep === 2 && (
-        <SurfacePanel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-              <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)' }}>
-                  2. Extracted Textbook Curriculum
-                </h2>
-                <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                  Chapters, topics, and subtopics parsed directly from your uploaded document.
-                </p>
-              </div>
-              <button type="button" className="adm-btn adm-btn-primary" onClick={() => setActiveStep(3)}>
-                Confirm Curriculum & View Video Plans
-                <ArrowRight size={14} />
-              </button>
-            </div>
-
-            {hierarchy?.chapters && hierarchy.chapters.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {hierarchy.chapters.map((ch) => (
-                  <div
-                    key={ch.id}
-                    style={{
-                      border: '1px solid var(--admin-border)',
-                      borderRadius: 'var(--radius-lg)',
-                      padding: '16px',
-                      backgroundColor: 'var(--admin-surface-raised)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', fontWeight: 700, color: 'var(--admin-text)', marginBottom: '8px' }}>
-                      <ListTree size={16} style={{ color: 'var(--admin-primary)', flexShrink: 0 }} />
-                      Chapter {ch.chapter_number}: {ch.title}
-                    </div>
-                    {ch.description && (
-                      <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginBottom: '12px' }}>
-                        {ch.description}
-                      </div>
-                    )}
-
-                    {/* Topics */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingLeft: '16px' }}>
-                      {ch.topics?.map((top) => (
-                        <div
-                          key={top.id}
-                          style={{
-                            borderLeft: '2px solid var(--admin-primary)',
-                            paddingLeft: '12px',
-                            paddingTop: '4px',
-                            paddingBottom: '4px',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)' }}>
-                            <TagIcon size={13} style={{ color: 'var(--admin-primary)', flexShrink: 0 }} />
-                            Topic {top.sequence_number}: {top.title}
-                          </div>
-                          {top.description && (
-                            <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                              {top.description}
-                            </div>
-                          )}
-
-                          {/* Subtopics */}
-                          {top.subtopics && top.subtopics.length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                              {top.subtopics.map((sub) => (
-                                <span
-                                  key={sub.id}
-                                  style={{
-                                    fontSize: '11px',
-                                    padding: '3px 8px',
-                                    borderRadius: 'var(--radius-sm)',
-                                    backgroundColor: 'var(--admin-primary-soft)',
-                                    color: 'var(--admin-primary)',
-                                    border: '1px solid var(--admin-border)',
-                                  }}
-                                >
-                                  {sub.title}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : loading ? (
-              <LoadingState label="Loading extracted hierarchy…" rows={4} variant="table" />
-            ) : (
-              <EmptyState
-                icon={<ListTree size={20} />}
-                title="No hierarchy found"
-                description="No curriculum hierarchy is available for this textbook yet. Please run the pipeline first."
+                }
               />
-            )}
-          </div>
-        </SurfacePanel>
-      )}
-
-      {/* STEP 3: Video Plans */}
-      {activeStep === 3 && (
-        <SurfacePanel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-              <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)' }}>
-                  3. Topic-Aligned Video Plans (~5.5 Min Units)
-                </h2>
-                <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                  Micro-learning video segmentations derived dynamically from your curriculum complexity.
-                </p>
-              </div>
-              <button type="button" className="adm-btn adm-btn-primary" onClick={() => setActiveStep(4)}>
-                Confirm Video Plans & View Narration Scripts
-                <ArrowRight size={14} />
-              </button>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-              {hierarchy?.chapters?.flatMap((c) => c.topics || []).map((t, idx) => (
-                <div
-                  key={t.id}
-                  style={{
-                    padding: '16px',
-                    borderRadius: 'var(--radius-lg)',
-                    backgroundColor: 'var(--admin-surface-raised)',
-                    border: '1px solid var(--admin-border)',
-                  }}
-                >
-                  <div style={{ fontSize: '11px', color: 'var(--admin-primary)', fontWeight: 700, textTransform: 'uppercase' }}>
-                    Topic Video Unit #{idx + 1}
-                  </div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--admin-text)', marginTop: '4px' }}>
-                    {t.title}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '6px' }}>
-                    <Clock size={12} />
-                    Target Duration: ~5.5 mins • {t.subtopics?.length || 2} Concept Modules
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </SurfacePanel>
-      )}
-
-      {/* STEP 4: Scripts & Voice */}
-      {activeStep === 4 && (
-        <SurfacePanel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-              <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--admin-text)' }}>
-                  4. Generated Educational Narration Scripts
-                </h2>
-                <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                  Narration text grounded in real definitions from your uploaded PDF text.
-                </p>
-              </div>
-              <button type="button" className="adm-btn adm-btn-primary" onClick={() => setActiveStep(5)}>
-                Proceed to Consolidated Review & Publish
-                <ArrowRight size={14} />
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {hierarchy?.chapters?.flatMap((c) => c.topics || []).slice(0, 3).map((t) => (
-                <div
-                  key={t.id}
-                  style={{
-                    padding: '16px',
-                    borderRadius: 'var(--radius-md)',
-                    backgroundColor: 'var(--admin-surface-raised)',
-                    border: '1px solid var(--admin-border)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 600, color: 'var(--admin-primary)' }}>
-                    <Mic size={14} />
-                    Narration Script: {t.title}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: '8px',
-                      fontSize: '12px',
-                      lineHeight: 1.7,
-                      color: 'var(--admin-text)',
-                      backgroundColor: 'var(--admin-surface)',
-                      border: '1px solid var(--admin-border)',
-                      padding: '12px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontFamily: "'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace",
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    Welcome to this video lesson on {t.title}. {t.description || 'Core study of the algorithmic concept.'} Key
-                    subtopics analyzed include: {t.subtopics?.map((s) => s.title).join(', ')}.
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </SurfacePanel>
-      )}
-
-      {/* STEP 5: Final Consolidated Review & 1-Click Publish */}
-      {activeStep === 5 && (
-        <SurfacePanel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {publishSuccess && (
+            ) : (
               <div
                 style={{
-                  padding: '16px 20px',
-                  borderRadius: 'var(--radius-lg)',
-                  backgroundColor: 'var(--admin-success-soft)',
-                  border: '1px solid var(--admin-success)',
-                  color: 'var(--admin-success)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '12px',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(270px, 1fr))',
+                  gap: '10px',
+                  maxHeight: '330px',
+                  overflowY: 'auto',
+                  paddingRight: '2px',
                 }}
               >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '15px' }}>
-                    <Sparkles size={16} />
-                    Successfully Published to Students!
-                  </div>
-                  <div style={{ fontSize: '13px', marginTop: '2px', color: 'var(--admin-text-secondary)' }}>
-                    All chapters, video lessons, and topic quizzes are now active and visible on the student learning portal.
-                  </div>
-                </div>
-                <button type="button" className="adm-btn adm-btn-primary" onClick={() => onNavigate('student-dashboard')}>
-                  View as Student
-                  <ArrowRight size={14} />
-                </button>
+                {textbooks.map((tb) => {
+                  const active = tb.id === selectedId;
+                  const progress = Math.max(0, Math.min(100, tb.progress ?? (['APPROVED', 'PUBLISHED', 'COMPLETED'].includes(statusUpper(tb.status)) ? 100 : 0)));
+                  const failed = statusUpper(tb.status) === 'FAILED';
+                  return (
+                    <button
+                      key={tb.id}
+                      type="button"
+                      onClick={() => selectTextbook(tb.id)}
+                      style={{
+                        textAlign: 'left',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: `1px solid ${active ? 'var(--admin-primary)' : 'var(--admin-border)'}`,
+                        backgroundColor: active ? 'var(--admin-primary-soft)' : 'var(--admin-surface-raised)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            fontSize: '12.5px',
+                            fontWeight: 700,
+                            color: active ? 'var(--admin-primary)' : 'var(--admin-text)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '190px',
+                          }}
+                        >
+                          {tb.title}
+                        </span>
+                        <StatusBadge status={tb.source_type === 'CHAPTER' ? 'Chapter PDF' : 'Textbook'} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                        <StatusBadge status={tb.status || 'uploaded'} />
+                        <span style={{ fontSize: '10.5px', color: 'var(--admin-text-secondary)' }}>
+                          {tb.chapters_count ?? 0} chapters · {tb.topics_count ?? 0} topics · {tb.subtopics_count ?? 0} subtopics
+                        </span>
+                      </div>
+                      {tb.stage_name && (
+                        <div style={{ fontSize: '10.5px', color: 'var(--admin-text-secondary)', marginTop: '3px' }}>
+                          Stage: {tb.stage_name.replace(/_/g, ' ').toLowerCase()}
+                        </div>
+                      )}
+                      <div style={{ marginTop: '6px', height: '4px', borderRadius: '999px', backgroundColor: 'var(--admin-border)', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${failed ? 100 : progress}%`,
+                            backgroundColor: failed ? 'var(--admin-error)' : progress >= 100 ? 'var(--admin-success)' : 'var(--admin-primary)',
+                            transition: 'width 0.4s ease',
+                          }}
+                        />
+                      </div>
+                      {tb.error_message && failed && (
+                        <div style={{ fontSize: '10.5px', color: 'var(--admin-error)', marginTop: '4px' }}>{tb.error_message}</div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-              <div>
-                <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--admin-text)' }}>
-                  5. Consolidated Review & Publication Gate
-                </h2>
-                <p style={{ fontSize: '13px', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
-                  Textbook #{activeTextbookId ?? '—'}: {activeTextbook?.title ?? '—'} • Review curriculum, video lessons, and quizzes in one screen.
-                </p>
-              </div>
+            {selectedId && (
+              <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--admin-border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--admin-text)' }}>
+                    {selectedTextbook?.title || 'Selected source'}
+                  </span>
+                  <StatusBadge status={selectedTextbook?.status || 'uploaded'} />
+                  {selectedTextbook?.source_type === 'CHAPTER' && (
+                    <span style={{ fontSize: '10.5px', color: 'var(--admin-text-secondary)' }}>
+                      Individual chapter PDF · chapter {selectedTextbook.chapter_number ?? '—'}
+                    </span>
+                  )}
+                  <span style={{ fontSize: '10.5px', color: 'var(--admin-text-secondary)' }}>
+                    {pipeline?.current_stage ? `Stage: ${pipeline.current_stage.replace(/_/g, ' ').toLowerCase()}` : ''}
+                    {typeof pipeline?.progress === 'number' ? ` · ${Math.round(pipeline.progress)}%` : ''}
+                  </span>
+                </div>
 
-              <button
-                type="button"
-                onClick={handleFinalPublish}
-                disabled={publishing || publishSuccess}
+                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '8px' }}>
+                  {(pipeline?.stages_log || []).map((s) => (
+                    <span
+                      key={`${s.stage}-${s.name}`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '10.5px',
+                        padding: '3px 7px',
+                        borderRadius: '999px',
+                        backgroundColor: 'var(--admin-success-soft)',
+                        color: 'var(--admin-success)',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <Check size={10} /> {s.stage}. {s.name.replace(/_/g, ' ').toLowerCase()}
+                    </span>
+                  ))}
+                  {(pipeline?.stages_log || []).length === 0 && (
+                    <span style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
+                      No pipeline stages recorded yet.
+                    </span>
+                  )}
+                </div>
+
+                {isPipelineActive && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', fontSize: '11.5px', color: 'var(--admin-primary)' }}>
+                    <Loader2 size={12} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+                    Extraction in progress — this panel updates automatically.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </SurfacePanel>
+
+      {/* Active step */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', paddingLeft: '2px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--admin-text-secondary)' }}>
+            Step {step} of 7
+          </span>
+          <span style={{ fontSize: '11px', color: 'var(--admin-text-secondary)' }}>· {activeStepMeta.hint}</span>
+          {selectedId && scopedPlans.length > 0 && (
+            <span style={{ fontSize: '11px', color: 'var(--admin-text-secondary)', marginLeft: 'auto' }}>
+              {scopedPlans.length} video{scopedPlans.length !== 1 ? 's' : ''} in scope ·{' '}
+              {formatDuration(scopedPlans.reduce((sum, p) => sum + (p.estimated_duration_seconds || p.duration_seconds || 0), 0))} planned
+            </span>
+          )}
+        </div>
+        {renderStep()}
+      </div>
+
+      {selectedId && selectedChapterIds.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', fontSize: '11px', color: 'var(--admin-text-secondary)' }}>
+          <span>Production scope:</span>
+          {(hierarchy?.chapters || [])
+            .filter((c) => selectedChapterIds.includes(c.id))
+            .map((c) => (
+              <span
+                key={c.id}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  padding: '10px 28px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: 'none',
-                  backgroundColor: 'var(--admin-success)',
-                  color: '#FFFFFF',
-                  fontWeight: 700,
-                  fontSize: '14px',
-                  cursor: publishing || publishSuccess ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {publishing ? <Loader size={15} /> : <Rocket size={15} />}
-                {publishing ? 'Publishing Everything…' : publishSuccess ? 'Published to Students' : 'Approve & Publish Everything'}
-              </button>
-            </div>
-
-            {/* 3-Column Consolidated Review Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' }}>
-              {/* Column 1: Curriculum Tree */}
-              <div
-                style={{
-                  border: '1px solid var(--admin-border)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: '16px',
+                  gap: '4px',
+                  padding: '2px 7px',
+                  borderRadius: '999px',
                   backgroundColor: 'var(--admin-surface-raised)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 700, color: 'var(--admin-primary)', marginBottom: '12px' }}>
-                  <ListTree size={15} />
-                  Verified Curriculum
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto' }}>
-                  {hierarchy?.chapters?.map((ch) => (
-                    <div key={ch.id} style={{ fontSize: '13px' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{ch.title}</div>
-                      {ch.topics?.map((t) => (
-                        <div key={t.id} style={{ paddingLeft: '12px', color: 'var(--admin-text-secondary)', fontSize: '12px', marginTop: '4px' }}>
-                          {t.title}
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Column 2: Video Player Preview */}
-              <div
-                style={{
                   border: '1px solid var(--admin-border)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: '16px',
-                  backgroundColor: 'var(--admin-surface-raised)',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 700, color: 'var(--admin-primary)', marginBottom: '12px' }}>
-                  <Clapperboard size={15} />
-                  Pre-Rendered Video Preview
-                </div>
-                <div
-                  style={{
-                    backgroundColor: '#0F172A',
-                    borderRadius: 'var(--radius-md)',
-                    aspectRatio: '16/9',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    overflow: 'hidden',
-                  }}
+                Ch {c.chapter_number}: {c.title}
+                <button
+                  type="button"
+                  onClick={() => toggleChapter(c.id)}
+                  aria-label={`Remove ${c.title} from scope`}
+                  style={{ background: 'transparent', border: 'none', padding: 0, display: 'inline-flex', color: 'var(--admin-text-secondary)', cursor: 'pointer' }}
                 >
-                  <video
-                    controls
-                    style={{ width: '100%', height: '100%' }}
-                    src={`http://127.0.0.1:8000/static/videos/pre_rendered_${activeTextbookId || 1}_1_1.mp4`}
-                  >
-                    Your browser does not support the video tag.
-                  </video>
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--admin-text-secondary)', marginTop: '10px' }}>
-                  Pre-rendered lesson with synchronized narration, visual slides, and true-type typography.
-                </div>
-              </div>
-
-              {/* Column 3: Quiz Assessment Preview */}
-              <div
-                style={{
-                  border: '1px solid var(--admin-border)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: '16px',
-                  backgroundColor: 'var(--admin-surface-raised)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 700, color: 'var(--admin-warning)', marginBottom: '12px' }}>
-                  <FileQuestion size={15} />
-                  Aligned Topic Quizzes
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto' }}>
-                  {hierarchy?.chapters?.flatMap((c) => c.topics || []).slice(0, 3).map((t, idx) => (
-                    <div
-                      key={t.id}
-                      style={{
-                        padding: '10px',
-                        borderRadius: 'var(--radius-sm)',
-                        backgroundColor: 'var(--admin-warning-soft)',
-                        border: '1px solid var(--admin-border)',
-                      }}
-                    >
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--admin-text)' }}>
-                        Quiz {idx + 1}: {t.title}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--admin-text-secondary)', marginTop: '4px' }}>
-                        3 Multi-tier Assessment Questions • Pass Threshold: 80%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </SurfacePanel>
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          <button type="button" className="adm-btn adm-btn-ghost adm-btn-sm" onClick={() => setStep(2)}>
+            Change chapters
+          </button>
+        </div>
       )}
     </div>
   );

@@ -34,6 +34,9 @@ import {
   ScriptSection,
   VideoRenderDetails,
   VideoGenerationStatus,
+  VideoRenderingJob,
+  CleanupPreview,
+  CleanupResult,
   SceneItem,
   ReviewItem,
   VideoUnit,
@@ -166,7 +169,13 @@ class ApiClient {
   }
 
   // --- Admin Endpoints ---
-  async uploadTextbook(file: File, title: string, subjectId?: number, description?: string): Promise<Textbook> {
+  async uploadTextbook(
+    file: File,
+    title: string,
+    subjectId?: number,
+    description?: string,
+    options?: { sourceType?: 'TEXTBOOK' | 'CHAPTER'; chapterNumber?: number }
+  ): Promise<Textbook> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('title', title);
@@ -175,6 +184,10 @@ class ApiClient {
     }
     if (description) {
       formData.append('description', description);
+    }
+    formData.append('source_type', options?.sourceType || 'TEXTBOOK');
+    if (options?.chapterNumber) {
+      formData.append('chapter_number', options.chapterNumber.toString());
     }
 
     return this.request<Textbook>('/admin/textbooks', {
@@ -281,14 +294,40 @@ class ApiClient {
     });
   }
 
-  async listVideoPlans(filters?: { topic_id?: number; chapter_id?: number; subject_id?: number; status?: string }): Promise<VideoPlan[]> {
+  async listVideoPlans(filters?: { topic_id?: number; chapter_id?: number; subject_id?: number; textbook_id?: number; status?: string }): Promise<VideoPlan[]> {
     const params = new URLSearchParams();
     if (filters?.topic_id) params.append('topic_id', filters.topic_id.toString());
     if (filters?.chapter_id) params.append('chapter_id', filters.chapter_id.toString());
     if (filters?.subject_id) params.append('subject_id', filters.subject_id.toString());
+    if (filters?.textbook_id) params.append('textbook_id', filters.textbook_id.toString());
     if (filters?.status) params.append('status', filters.status);
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<VideoPlan[]>(`/admin/video-plans${query}`);
+  }
+
+  /** PHASE 3 (Video Studio): admin-authored additional video plan. */
+  async createVideoPlan(topicId: number, data: {
+    title: string;
+    description?: string;
+    sequence_number?: number;
+    duration_seconds?: number;
+    estimated_duration_seconds?: number;
+    source_start_page?: number;
+    source_end_page?: number;
+    learning_objective?: string;
+    content_outline: string[];
+  }): Promise<VideoPlan> {
+    return this.request<VideoPlan>(`/admin/topics/${topicId}/video-plans`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** PHASE 3 (Video Studio): remove an unrendered, unapproved plan. */
+  async deleteVideoPlan(id: number): Promise<{ message: string; id: number }> {
+    return this.request<{ message: string; id: number }>(`/admin/video-plans/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   async getVideoPlan(id: number): Promise<VideoPlan> {
@@ -321,10 +360,10 @@ class ApiClient {
   }
 
   // BUILD 05: SCRIPT GENERATION & ADMIN REVIEW METHODS
-  async generateVideoScript(videoId: number, force: boolean = false, engine?: string): Promise<ScriptItem> {
+  async generateVideoScript(videoId: number, force: boolean = false, engine?: string, narrationStyle?: string): Promise<ScriptItem> {
     return this.request<ScriptItem>(`/admin/video-plans/${videoId}/script/generate`, {
       method: 'POST',
-      body: JSON.stringify({ force_regenerate: force, engine }),
+      body: JSON.stringify({ force_regenerate: force, engine, narration_style: narrationStyle }),
     });
   }
 
@@ -379,6 +418,51 @@ class ApiClient {
     });
   }
 
+  /** Queue real-time background video rendering job with 9-stage tracking */
+  async startVideoRenderingJob(videoId: number, force: boolean = false, ttsEngine?: string, voice?: string): Promise<VideoRenderingJob> {
+    return this.request<VideoRenderingJob>('/admin/video-rendering/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ video_id: videoId, force, tts_engine: ttsEngine, voice }),
+    });
+  }
+
+  async getVideoRenderingJob(jobId: string): Promise<VideoRenderingJob> {
+    return this.request<VideoRenderingJob>(`/admin/video-rendering/jobs/${jobId}`);
+  }
+
+  async listVideoRenderingJobs(filters?: { video_id?: number; status?: string; limit?: number }): Promise<VideoRenderingJob[]> {
+    const params = new URLSearchParams();
+    if (filters?.video_id) params.append('video_id', filters.video_id.toString());
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request<VideoRenderingJob[]>(`/admin/video-rendering/jobs${query}`);
+  }
+
+  async cancelVideoRenderingJob(jobId: string, reason?: string): Promise<VideoRenderingJob> {
+    return this.request<VideoRenderingJob>(`/admin/video-rendering/jobs/${jobId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async retryVideoRenderingJob(jobId: string): Promise<VideoRenderingJob> {
+    return this.request<VideoRenderingJob>(`/admin/video-rendering/jobs/${jobId}/retry`, {
+      method: 'POST',
+    });
+  }
+
+  async getCleanupPreview(): Promise<CleanupPreview> {
+    return this.request<CleanupPreview>('/admin/maintenance/cleanup-preview');
+  }
+
+  async executeCleanup(confirm: boolean = false, createBackup: boolean = true): Promise<CleanupResult> {
+    return this.request<CleanupResult>('/admin/maintenance/cleanup-execute', {
+      method: 'POST',
+      body: JSON.stringify({ confirm, create_backup: createBackup }),
+    });
+  }
+
   async getVideoGenerationStatus(videoId: number): Promise<VideoGenerationStatus> {
     return this.request<VideoGenerationStatus>(`/admin/videos/${videoId}/generation-status`);
   }
@@ -408,15 +492,27 @@ class ApiClient {
     });
   }
 
-  async listVideos(filters?: { topic_id?: number; chapter_id?: number; subject_id?: number; render_status?: string; status?: string }): Promise<VideoRenderDetails[]> {
+  async listVideos(filters?: { topic_id?: number; chapter_id?: number; subject_id?: number; textbook_id?: number; render_status?: string; status?: string }): Promise<VideoRenderDetails[]> {
     const params = new URLSearchParams();
     if (filters?.topic_id) params.append('topic_id', filters.topic_id.toString());
     if (filters?.chapter_id) params.append('chapter_id', filters.chapter_id.toString());
     if (filters?.subject_id) params.append('subject_id', filters.subject_id.toString());
+    if (filters?.textbook_id) params.append('textbook_id', filters.textbook_id.toString());
     if (filters?.render_status) params.append('render_status', filters.render_status);
     if (filters?.status) params.append('status', filters.status);
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<VideoRenderDetails[]>(`/admin/videos${query}`);
+  }
+
+  /**
+   * PHASE 3 (Video Studio): request changes with a mandatory reason. Resets the
+   * video to review + script revision while preserving the rendered MP4.
+   */
+  async requestVideoRegeneration(videoId: number, feedback: string): Promise<VideoRenderDetails> {
+    return this.request<VideoRenderDetails>(`/admin/videos/${videoId}/request-regeneration`, {
+      method: 'POST',
+      body: JSON.stringify({ feedback }),
+    });
   }
 
   async listReviewItems(status?: string): Promise<ReviewItem[]> {

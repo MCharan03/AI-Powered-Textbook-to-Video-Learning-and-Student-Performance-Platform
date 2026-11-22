@@ -442,7 +442,22 @@ def run_textbook_ingestion_pipeline(db: Session, textbook_id: int, job_id: Optio
         # ==============================================================================
         update_stage("CHAPTER_EXTRACTION", 40.0, 3)
         extractor = get_curriculum_extractor()
-        raw_chapters = extractor.extract_chapters(pages, textbook.title)
+
+        if (textbook.source_type or "TEXTBOOK").upper() == "CHAPTER":
+            # Chapter-scoped upload: the whole PDF is ONE chapter. We must not let
+            # the chapter splitter turn it into multiple chapters.
+            first_page = pages[0].get("page_number", 1) if pages else 1
+            last_page = pages[-1].get("page_number", len(pages)) if pages else 1
+            raw_chapters = [{
+                "chapter_number": textbook.chapter_number or 1,
+                "title": textbook.title,
+                "description": textbook.description,
+                "source_start_page": first_page,
+                "source_end_page": last_page,
+                "confidence_score": 1.0,
+            }]
+        else:
+            raw_chapters = extractor.extract_chapters(pages, textbook.title)
 
         if not raw_chapters:
             raise ValueError("Curriculum extractor was unable to identify chapter divisions")

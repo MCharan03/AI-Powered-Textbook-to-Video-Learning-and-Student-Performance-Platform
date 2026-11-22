@@ -35,14 +35,13 @@ interface Counts {
   parents: number | null;
 }
 
-const PIPELINE_STEPS = [
-  'Upload Textbook',
-  'Extract Curriculum',
-  'Review & Approve',
-  'Video Plans',
+const VIDEO_STUDIO_STAGES = [
+  'Upload',
+  'Curriculum',
+  'Plans',
   'Scripts',
-  'Videos',
-  'Publish',
+  'Rendering',
+  'Review & Publish',
 ];
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
@@ -184,7 +183,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
           icon={Clapperboard}
           tone="primary"
           loading={loading}
-          onClick={() => onNavigate('admin-video-review')}
+          onClick={() => onNavigate('admin-published-content')}
         />
       </div>
 
@@ -410,7 +409,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
           </button>
         </div>
 
-        <WorkflowStepper steps={PIPELINE_STEPS} currentStep={0} />
+        <WorkflowStepper steps={VIDEO_STUDIO_STAGES} currentStep={0} />
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginTop: '16px' }}>
           {[
