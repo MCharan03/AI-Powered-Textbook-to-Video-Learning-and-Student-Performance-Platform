@@ -1,5 +1,6 @@
 import React from 'react';
 import { QuizSubmissionResult } from '../lib/types';
+import { CheckCircle2, AlertCircle, RotateCcw, ArrowRight, ShieldCheck } from 'lucide-react';
 
 interface ScoreSummaryCardProps {
   result: QuizSubmissionResult;
@@ -7,6 +8,10 @@ interface ScoreSummaryCardProps {
   onRetry?: () => void;
 }
 
+/**
+ * High-clarity quiz outcome summary card.
+ * Unslop refactored: Subtractive design, Lucide verification icons, tabular numbers, actionable next steps.
+ */
 export const ScoreSummaryCard: React.FC<ScoreSummaryCardProps> = ({
   result,
   onStartAdaptive,
@@ -16,63 +21,102 @@ export const ScoreSummaryCard: React.FC<ScoreSummaryCardProps> = ({
 
   return (
     <div
+      className="lrn-card"
       style={{
-        backgroundColor: '#FFFFFF',
-        borderRadius: '12px',
-        border: '1px solid #E2E8F0',
-        padding: '32px',
+        padding: '32px 28px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         textAlign: 'center',
         gap: '20px',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+        maxWidth: '560px',
+        margin: '0 auto',
       }}
     >
+      {/* Result Status Indicator */}
       <div
         style={{
-          width: '72px',
-          height: '72px',
-          borderRadius: '50%',
-          backgroundColor: isPassed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-          color: isPassed ? '#10B981' : '#EF4444',
+          width: '56px',
+          height: '56px',
+          borderRadius: 'var(--radius-lg)',
+          backgroundColor: isPassed ? 'var(--learn-success-soft)' : 'var(--learn-error-soft)',
+          color: isPassed ? 'var(--learn-success)' : 'var(--learn-error)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: '32px',
-          fontWeight: 700,
-          border: `2px solid ${isPassed ? '#10B981' : '#EF4444'}`,
+          border: `1px solid ${isPassed ? 'rgba(5, 150, 105, 0.2)' : 'rgba(220, 38, 38, 0.2)'}`,
         }}
       >
-        {isPassed ? '✓' : '!'}
+        {isPassed ? <CheckCircle2 size={30} strokeWidth={2.2} /> : <AlertCircle size={30} strokeWidth={2.2} />}
       </div>
 
       <div>
-        <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#0F172A' }}>
-          {isPassed ? 'Mastery Achieved!' : 'Needs Remediation'}
+        <div
+          style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            color: 'var(--learn-text-secondary)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+          }}
+        >
+          Assessment Outcome
+        </div>
+        <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--learn-text)', marginTop: '4px' }}>
+          {isPassed ? 'Mastery Benchmark Achieved' : 'Remediation Recommended'}
         </h2>
-        <p style={{ fontSize: '15px', color: '#64748B', marginTop: '6px' }}>
-          Score: <strong style={{ color: isPassed ? '#10B981' : '#EF4444' }}>{result.score_percentage}%</strong> (Passing threshold: {result.mastery_threshold}%)
-        </p>
+        <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+          <span
+            style={{
+              fontSize: '28px',
+              fontWeight: 700,
+              color: isPassed ? 'var(--learn-success)' : 'var(--learn-error)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {result.score_percentage}%
+          </span>
+          <span style={{ fontSize: '13px', color: 'var(--learn-text-secondary)' }}>
+            (Threshold: {result.mastery_threshold}%)
+          </span>
+        </div>
       </div>
 
       {result.weak_concepts && result.weak_concepts.length > 0 && (
-        <div style={{ width: '100%', maxWidth: '480px', marginTop: '8px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>
-            Targeted Concepts for Review:
+        <div
+          style={{
+            width: '100%',
+            padding: '14px 16px',
+            borderRadius: 'var(--radius-md)',
+            backgroundColor: 'var(--learn-surface-raised)',
+            border: '1px solid var(--learn-border)',
+            textAlign: 'left',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              color: 'var(--learn-text-secondary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              marginBottom: '8px',
+            }}
+          >
+            Identified Knowledge Gaps
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
             {result.weak_concepts.map((concept, idx) => (
               <span
                 key={idx}
                 style={{
-                  padding: '4px 12px',
-                  borderRadius: '16px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                  color: '#DC2626',
+                  padding: '3px 8px',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: 'var(--learn-error-soft)',
+                  color: 'var(--learn-error)',
                   fontSize: '12px',
-                  fontWeight: 600,
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  fontWeight: 500,
+                  border: '1px solid rgba(220, 38, 38, 0.2)',
                 }}
               >
                 {concept}
@@ -82,40 +126,26 @@ export const ScoreSummaryCard: React.FC<ScoreSummaryCardProps> = ({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+      {/* Action Buttons */}
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', width: '100%' }}>
         {onRetry && (
           <button
             onClick={onRetry}
-            style={{
-              padding: '10px 20px',
-              borderRadius: '8px',
-              backgroundColor: '#F1F5F9',
-              color: '#475569',
-              border: '1px solid #CBD5E1',
-              fontWeight: 600,
-              fontSize: '13px',
-              cursor: 'pointer',
-            }}
+            className="lrn-btn lrn-btn-secondary"
+            style={{ padding: '9px 18px' }}
           >
-            Review Questions
+            <RotateCcw size={14} />
+            <span>Retake Quiz</span>
           </button>
         )}
-        {result.weak_concepts && result.weak_concepts.length > 0 && onStartAdaptive && (
+        {onStartAdaptive && (
           <button
             onClick={onStartAdaptive}
-            style={{
-              padding: '10px 24px',
-              borderRadius: '8px',
-              backgroundColor: '#2563EB',
-              color: '#FFFFFF',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '13px',
-              cursor: 'pointer',
-              boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)',
-            }}
+            className="lrn-btn lrn-btn-primary"
+            style={{ padding: '9px 18px' }}
           >
-            Start Adaptive Remediation →
+            <span>Start Adaptive Remediation</span>
+            <ArrowRight size={14} />
           </button>
         )}
       </div>

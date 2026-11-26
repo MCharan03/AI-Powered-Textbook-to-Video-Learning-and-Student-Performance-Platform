@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth, AuthProvider } from './lib/authContext';
+import { ThemeProvider } from './lib/themeContext';
 import { HeaderBar } from './components/HeaderBar';
 import { SidebarNav } from './components/SidebarNav';
 import { Login } from './pages/Login';
@@ -56,6 +57,17 @@ const isCurrentAppAdmin = (): boolean => {
     const metaEnv = (import.meta as any).env;
     if (metaEnv?.VITE_APP_PORTAL === 'admin') {
       return true;
+    }
+    // Also support query param `?portal=admin` or localStorage for local development
+    if (window.location.search.includes('portal=admin')) {
+      return true;
+    }
+    try {
+      if (localStorage.getItem('active_portal') === 'admin') {
+        return true;
+      }
+    } catch {
+      // ignore
     }
   }
   return false;
@@ -177,17 +189,28 @@ const MainLayout: React.FC = () => {
 
   if (!isAdminPortal && user.role === 'admin') {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC', color: '#0F172A', padding: '24px', textAlign: 'center' }}>
-        <h2 style={{ fontSize: '20px', color: '#2563EB', marginBottom: '8px' }}>Administrator Session Detected</h2>
-        <p style={{ color: '#64748B', maxWidth: '440px', lineHeight: 1.5, marginBottom: '20px' }}>
-          Administrator accounts are managed exclusively on <strong>admin.veyoralabs.net</strong> and cannot access the Student/Parent/Teacher learning application.
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0B0F19', color: '#F9FAFB', padding: '24px', textAlign: 'center' }}>
+        <h2 style={{ fontSize: '20px', color: '#A5B4FC', marginBottom: '8px' }}>Administrator Session Detected</h2>
+        <p style={{ color: '#94A3B8', maxWidth: '440px', lineHeight: 1.5, marginBottom: '20px' }}>
+          Administrator accounts are managed exclusively on <strong>admin.veyoralabs.net</strong>. Launch the operational console below to manage curriculum and review media.
         </p>
-        <button
-          onClick={logout}
-          style={{ padding: '10px 18px', backgroundColor: '#2563EB', color: '#FFF', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
-        >
-          Sign Out
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={() => {
+              try { localStorage.setItem('active_portal', 'admin'); } catch {}
+              window.location.search = '?portal=admin';
+            }}
+            style={{ padding: '10px 18px', backgroundColor: '#6366F1', color: '#FFF', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+          >
+            Open Admin Console →
+          </button>
+          <button
+            onClick={logout}
+            style={{ padding: '10px 18px', backgroundColor: 'transparent', color: '#94A3B8', border: '1px solid #374151', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
     );
   }
@@ -439,9 +462,11 @@ const MainLayout: React.FC = () => {
 
 export const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <MainLayout />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <MainLayout />
+      </AuthProvider>
+    </ThemeProvider>
   );
 };
 

@@ -48,13 +48,14 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ stages }) => {
           <div
             key={num}
             style={{
-              border: `1px solid ${status === 'failed' ? '#FECACA' : 'var(--admin-border)'}`,
+              border: `1px solid ${status === 'failed' ? 'rgba(239, 68, 68, 0.4)' : 'var(--admin-border)'}`,
               borderRadius: 'var(--radius-lg)',
               padding: '14px',
               backgroundColor: 'var(--admin-surface)',
               display: 'flex',
               flexDirection: 'column',
               gap: '10px',
+              transition: 'border-color var(--duration-fast) var(--ease)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>

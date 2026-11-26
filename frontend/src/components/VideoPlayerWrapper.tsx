@@ -213,17 +213,17 @@ export const VideoPlayerWrapper: React.FC<VideoPlayerWrapperProps> = ({ video, o
           <div style={{
             position: 'absolute', inset: 0, zIndex: 2,
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(15,23,42,0.92)', color: '#e2e8f0', textAlign: 'center', padding: '24px'
+            background: 'rgba(15,23,42,0.92)', color: 'var(--text-on-inverse, #e2e8f0)', textAlign: 'center', padding: '24px'
           }}>
             <p style={{ fontWeight: 600, marginBottom: 6 }}>Video playback failed</p>
-            <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary, #94a3b8)', marginBottom: 14 }}>
               The lesson media could not be loaded. Check your connection and try again.
             </p>
             <button
               onClick={retryMedia}
               style={{
                 padding: '8px 18px', borderRadius: 6, border: 'none',
-                background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer'
+                background: 'var(--primary, #2563eb)', color: '#fff', fontWeight: 600, cursor: 'pointer'
               }}
             >
               Retry
@@ -270,11 +270,11 @@ export const VideoPlayerWrapper: React.FC<VideoPlayerWrapperProps> = ({ video, o
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 180 }}>
-          <div style={{ height: 6, borderRadius: 3, background: '#e2e8f0', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${pct}%`, background: '#2563eb', transition: 'width 0.3s' }} />
+          <div style={{ height: 6, borderRadius: 3, background: 'var(--surface-raised)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--primary)', transition: 'width 0.3s' }} />
           </div>
         </div>
-        <span style={{ fontSize: 12, color: '#64748b' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
           {Math.floor(currentTime / 60)}:{String(Math.floor(currentTime % 60)).padStart(2, '0')} / {Math.floor(total / 60)}:{String(Math.round(total % 60)).padStart(2, '0')}
         </span>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -284,9 +284,9 @@ export const VideoPlayerWrapper: React.FC<VideoPlayerWrapperProps> = ({ video, o
               onClick={() => changeSpeed(rate)}
               style={{
                 padding: '4px 8px', fontSize: 12, borderRadius: 5, cursor: 'pointer',
-                border: playbackRate === rate ? '1px solid #2563eb' : '1px solid #e2e8f0',
-                background: playbackRate === rate ? '#eff6ff' : '#fff',
-                color: playbackRate === rate ? '#2563eb' : '#475569',
+                border: playbackRate === rate ? '1px solid var(--primary)' : '1px solid var(--border)',
+                background: playbackRate === rate ? 'var(--primary-soft, rgba(37, 99, 235, 0.12))' : 'var(--surface)',
+                color: playbackRate === rate ? 'var(--primary)' : 'var(--text-secondary)',
                 fontWeight: playbackRate === rate ? 600 : 400
               }}
             >
@@ -298,7 +298,7 @@ export const VideoPlayerWrapper: React.FC<VideoPlayerWrapperProps> = ({ video, o
 
       <div style={{ marginTop: 8, minHeight: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
         {progressSyncStatus && (
-          <span style={{ fontSize: 12, color: isCompleted ? '#059669' : '#64748b' }}>{progressSyncStatus}</span>
+          <span style={{ fontSize: 12, color: isCompleted ? 'var(--learn-success, #059669)' : 'var(--text-secondary)' }}>{progressSyncStatus}</span>
         )}
       </div>
 
@@ -307,7 +307,7 @@ export const VideoPlayerWrapper: React.FC<VideoPlayerWrapperProps> = ({ video, o
           onClick={onProceedToQuiz}
           style={{
             marginTop: 8, padding: '10px 20px', borderRadius: 8, border: 'none',
-            background: '#059669', color: '#fff', fontWeight: 600, cursor: 'pointer'
+            background: 'var(--learn-success, #059669)', color: '#fff', fontWeight: 600, cursor: 'pointer'
           }}
         >
           Proceed to Quiz →

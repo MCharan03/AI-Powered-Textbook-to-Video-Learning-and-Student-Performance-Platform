@@ -21,12 +21,10 @@ export const FormInputSlider: React.FC<FormInputSliderProps> = ({
   description,
   onChange,
 }) => {
-  const isDark = document.body.className.includes('theme-admin');
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <label style={{ fontSize: '14px', fontWeight: 600, color: isDark ? 'var(--admin-text)' : 'var(--learn-text)' }}>
+        <label style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
           {label}
         </label>
         <span
@@ -35,15 +33,15 @@ export const FormInputSlider: React.FC<FormInputSliderProps> = ({
             fontWeight: 700,
             padding: '2px 8px',
             borderRadius: '6px',
-            backgroundColor: isDark ? 'var(--admin-surface-raised)' : '#F1F5F9',
-            color: isDark ? 'var(--admin-primary)' : 'var(--learn-primary)',
+            backgroundColor: 'var(--surface-raised)',
+            color: 'var(--primary)',
           }}
         >
           {value} {unit}
         </span>
       </div>
       {description && (
-        <span style={{ fontSize: '12px', color: isDark ? 'var(--admin-text-secondary)' : 'var(--learn-text-secondary)' }}>
+        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
           {description}
         </span>
       )}
@@ -56,11 +54,11 @@ export const FormInputSlider: React.FC<FormInputSliderProps> = ({
         onChange={(e) => onChange(Number(e.target.value))}
         style={{
           width: '100%',
-          accentColor: isDark ? 'var(--admin-primary)' : 'var(--learn-primary)',
+          accentColor: 'var(--primary)',
           cursor: 'pointer',
         }}
       />
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: isDark ? 'var(--admin-text-secondary)' : 'var(--learn-text-secondary)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)' }}>
         <span>{min} {unit}</span>
         <span>{max} {unit}</span>
       </div>

@@ -107,17 +107,17 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
     return (
       <SurfacePanel>
         <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-          <div style={{ fontSize: '32px', color: '#EF4444' }}>🔒</div>
-          <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', marginTop: '12px' }}>
+          <div style={{ fontSize: '32px', color: 'var(--learn-error, #EF4444)' }}>🔒</div>
+          <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text)', marginTop: '12px' }}>
             Quiz Content Unavailable
           </h2>
-          <p style={{ fontSize: '14px', color: '#64748B', marginTop: '6px' }}>{error}</p>
+          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '6px' }}>{error}</p>
           <button
             onClick={() => onNavigate('student-dashboard')}
             style={{
               marginTop: '16px',
               padding: '8px 18px',
-              backgroundColor: '#2563EB',
+              backgroundColor: 'var(--primary)',
               color: '#FFFFFF',
               border: 'none',
               borderRadius: '6px',
@@ -135,7 +135,7 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
   if (result) {
     return (
       <div style={{ maxWidth: '720px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0F172A', textAlign: 'center' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', textAlign: 'center' }}>
           Quiz Assessment Results
         </h1>
         <ScoreSummaryCard
@@ -145,7 +145,7 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
         />
 
         {recommendation && (
-          <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#EEF2FF', border: '1px solid #C7D2FE', color: '#3730A3', fontSize: '14px' }}>
+          <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: 'var(--primary-soft, rgba(37,99,235,0.08))', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '14px' }}>
             <strong>💡 Recommendation: </strong> {recommendation}
           </div>
         )}
@@ -154,7 +154,7 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
         {attemptHistory.length > 0 && (
           <SurfacePanel>
             <div style={{ padding: '4px 0' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#1E293B', marginBottom: '12px' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)', marginBottom: '12px' }}>
                 Attempt History ({attemptHistory.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -164,9 +164,9 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
                     style={{
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                       padding: '10px 14px', borderRadius: '8px',
-                      backgroundColor: att.passed ? '#F0FDF4' : '#FEF2F2',
-                      border: `1px solid ${att.passed ? '#BBF7D0' : '#FECACA'}`,
-                      fontSize: '13px', color: '#334155',
+                      backgroundColor: 'var(--surface-raised)',
+                      border: `1px solid ${att.passed ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                      fontSize: '13px', color: 'var(--text)',
                     }}
                   >
                     <span style={{ fontWeight: 600 }}>
@@ -174,11 +174,11 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
                     </span>
                     <span>
                       {att.percentage}% • {att.score}/{att.total_questions} correct •{' '}
-                      <strong style={{ color: att.passed ? '#16A34A' : '#DC2626' }}>
+                      <strong style={{ color: att.passed ? 'var(--learn-success, #16A34A)' : 'var(--learn-error, #DC2626)' }}>
                         {att.passed ? 'PASSED' : 'NEEDS PRACTICE'}
                       </strong>
                     </span>
-                    <span style={{ fontSize: '12px', color: '#64748B' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                       {att.submitted_at ? new Date(att.submitted_at).toLocaleString() : ''}
                     </span>
                   </div>
@@ -191,22 +191,22 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
         {/* Detailed Question Review Breakdown */}
         {detailedBreakdown.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1E293B' }}>Question Breakdown & Explanations</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text)' }}>Question Breakdown & Explanations</h2>
             {detailedBreakdown.map((qr, qidx) => (
               <div
                 key={qr.question_id || qidx}
                 style={{
                   padding: '16px 20px',
                   borderRadius: '12px',
-                  backgroundColor: qr.is_correct ? '#F0FDF4' : '#FEF2F2',
-                  border: `1px solid ${qr.is_correct ? '#BBF7D0' : '#FECACA'}`,
+                  backgroundColor: 'var(--surface-raised)',
+                  border: `1px solid ${qr.is_correct ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, fontSize: '14px', color: '#0F172A' }}>
+                  <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>
                     Q{qidx + 1}. {qr.question_text}
                   </span>
                   <span
@@ -215,18 +215,18 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
                       fontWeight: 700,
                       padding: '2px 8px',
                       borderRadius: '12px',
-                      backgroundColor: qr.is_correct ? '#16A34A' : '#DC2626',
+                      backgroundColor: qr.is_correct ? 'var(--learn-success, #16A34A)' : 'var(--learn-error, #DC2626)',
                       color: '#FFFFFF',
                     }}
                   >
                     {qr.is_correct ? 'CORRECT' : 'INCORRECT'}
                   </span>
                 </div>
-                <div style={{ fontSize: '13px', color: '#475569' }}>
-                  Your Answer: <strong style={{ color: qr.is_correct ? '#16A34A' : '#DC2626' }}>{String(qr.selected_answer)}</strong> • Correct Answer: <strong style={{ color: '#16A34A' }}>{String(qr.correct_answer)}</strong>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Your Answer: <strong style={{ color: qr.is_correct ? 'var(--learn-success, #16A34A)' : 'var(--learn-error, #DC2626)' }}>{String(qr.selected_answer)}</strong> • Correct Answer: <strong style={{ color: 'var(--learn-success, #16A34A)' }}>{String(qr.correct_answer)}</strong>
                 </div>
                 {qr.explanation && (
-                  <div style={{ fontSize: '12px', color: '#334155', backgroundColor: 'rgba(255,255,255,0.7)', padding: '10px 12px', borderRadius: '8px', marginTop: '4px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text)', backgroundColor: 'var(--surface)', padding: '10px 12px', borderRadius: '8px', marginTop: '4px', border: '1px solid var(--border)' }}>
                     <strong>Explanation:</strong> {qr.explanation}
                   </div>
                 )}
@@ -254,17 +254,17 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
     <div style={{ maxWidth: '720px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '12px', fontWeight: 600, color: '#2563EB', textTransform: 'uppercase' }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--primary)', textTransform: 'uppercase' }}>
             {quiz.title}
           </span>
-          <span style={{ fontSize: '13px', color: '#64748B' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
             Question {currentIdx + 1} of {quiz.questions.length}
           </span>
         </div>
         <div
           style={{
             height: '4px',
-            backgroundColor: '#E2E8F0',
+            backgroundColor: 'var(--surface-raised)',
             borderRadius: '2px',
             marginTop: '8px',
             overflow: 'hidden',
@@ -273,7 +273,7 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
           <div
             style={{
               height: '100%',
-              backgroundColor: '#2563EB',
+              backgroundColor: 'var(--primary)',
               width: `${((currentIdx + 1) / quiz.questions.length) * 100}%`,
               transition: 'width 200ms ease',
             }}
@@ -285,8 +285,8 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
         <div style={{
           maxWidth: '720px', margin: '0 auto',
           padding: '12px 16px', borderRadius: '10px',
-          backgroundColor: '#FEF2F2', border: '1px solid #FECACA',
-          color: '#B91C1C', fontSize: '13px', fontWeight: 500,
+          backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)',
+          color: 'var(--learn-error, #B91C1C)', fontSize: '13px', fontWeight: 500,
         }}>
           ⚠ {submitError}
         </div>
@@ -295,7 +295,7 @@ export const StudentQuiz: React.FC<StudentQuizProps> = ({ onNavigate, quizId, to
       {/* Question Card */}
       <SurfacePanel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#0F172A', lineHeight: '26px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text)', lineHeight: '26px' }}>
             {currentIdx + 1}. {currentQ.question_text}
           </h2>
 

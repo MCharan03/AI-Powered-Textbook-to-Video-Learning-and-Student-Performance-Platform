@@ -36,10 +36,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    if (user?.role === 'admin') {
-      document.body.className = 'theme-admin';
-    } else {
-      document.body.className = 'theme-learn';
+    if (typeof document !== 'undefined') {
+      if (user?.role === 'admin') {
+        document.body.setAttribute('data-portal', 'admin');
+        document.body.classList.add('portal-admin', 'theme-admin');
+        document.body.classList.remove('portal-learn', 'theme-learn');
+      } else {
+        document.body.setAttribute('data-portal', 'learn');
+        document.body.classList.add('portal-learn', 'theme-learn');
+        document.body.classList.remove('portal-admin', 'theme-admin');
+      }
     }
   }, [user]);
 

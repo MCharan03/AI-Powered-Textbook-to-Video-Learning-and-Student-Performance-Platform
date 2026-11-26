@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Lock, ArrowLeft, BookOpen } from 'lucide-react';
 import { VideoPlayerWrapper } from '../../components/VideoPlayerWrapper';
 import { LessonPlaylist } from '../../components/LessonPlaylist';
 import { SurfacePanel } from '../../components/SurfacePanel';
@@ -83,45 +84,42 @@ export const StudentVideoPlayer: React.FC<StudentVideoPlayerProps> = ({ onNaviga
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0F172A' }}>Pre-Rendered Video Lesson</h1>
-        <p style={{ fontSize: '14px', color: '#64748B', marginTop: '4px' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+          Pre-Rendered Video Lesson
+        </h1>
+        <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
           Strictly pre-rendered video playback with automated milestone progress synchronization.
         </p>
       </div>
 
       {loading ? (
         <SurfacePanel>
-          <div style={{ textAlign: 'center', padding: '32px 16px', color: '#64748B' }}>
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
             Loading lesson video asset...
           </div>
         </SurfacePanel>
       ) : error ? (
         <SurfacePanel>
           <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-            <div style={{ fontSize: '32px', color: '#EF4444' }}>🔒</div>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', marginTop: '12px' }}>
+            <div style={{ color: 'var(--error)', display: 'inline-flex', marginBottom: '8px' }}>
+              <Lock size={32} />
+            </div>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text)', marginTop: '8px' }}>
               Content Locked or Pending Review
             </h2>
-            <p style={{ fontSize: '14px', color: '#64748B', marginTop: '6px', maxWidth: '480px', margin: '6px auto 0' }}>
+            <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginTop: '6px', maxWidth: '480px', margin: '6px auto 0' }}>
               {error}
             </p>
-            <p style={{ fontSize: '12px', color: '#94A3B8', marginTop: '12px' }}>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '12px' }}>
               Note: Unapproved videos in 'pending_review' or unrendered videos cannot be accessed by students until approved and rendered.
             </p>
             <button
               onClick={() => onNavigate('student-dashboard')}
-              style={{
-                marginTop: '16px',
-                padding: '8px 18px',
-                backgroundColor: '#2563EB',
-                color: '#FFFFFF',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: 600,
-              }}
+              className="lrn-btn lrn-btn-primary"
+              style={{ marginTop: '16px' }}
             >
-              ← Back to Learning Dashboard
+              <ArrowLeft size={14} />
+              <span>Back to Learning Dashboard</span>
             </button>
           </div>
         </SurfacePanel>
@@ -137,21 +135,21 @@ export const StudentVideoPlayer: React.FC<StudentVideoPlayerProps> = ({ onNaviga
             {/* Video Lesson Key Objectives */}
             <div style={{ marginTop: '20px' }}>
               <SurfacePanel>
-                <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A', marginBottom: '8px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', marginBottom: '8px' }}>
                   Lesson Learning Objectives
                 </h3>
                 {currentVideo.content_outline && currentVideo.content_outline.length > 0 ? (
-                  <ul style={{ paddingLeft: '20px', fontSize: '13px', color: '#475569', lineHeight: '22px' }}>
+                  <ul style={{ paddingLeft: '20px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '22px' }}>
                     {currentVideo.content_outline.map((item, idx) => (
                       <li key={idx}>{item}</li>
                     ))}
                   </ul>
                 ) : currentVideo.learning_objective ? (
-                  <p style={{ fontSize: '13px', color: '#475569', lineHeight: '22px' }}>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '22px' }}>
                     {currentVideo.learning_objective}
                   </p>
                 ) : (
-                  <p style={{ fontSize: '13px', color: '#475569', lineHeight: '22px' }}>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '22px' }}>
                     Watch the full lesson to learn the core concepts of “{currentVideo.title}”. Your progress is saved automatically as you watch.
                   </p>
                 )}

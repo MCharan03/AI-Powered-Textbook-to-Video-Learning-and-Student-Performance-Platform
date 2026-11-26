@@ -118,14 +118,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Welcome */}
+      {/* Operational Header */}
       <div>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--admin-text)', letterSpacing: '-0.01em' }}>
-          Welcome back, Admin
+        <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--admin-text)', letterSpacing: '-0.015em' }}>
+          Operational Overview
         </h1>
-        <p style={{ fontSize: '14px', color: 'var(--admin-text-secondary)', marginTop: '4px', maxWidth: '640px' }}>
-          Here is the current status of your platform — registered users, uploaded textbooks, and content
-          moving through the AI generation pipeline.
+        <p style={{ fontSize: '13.5px', color: 'var(--admin-text-secondary)', marginTop: '4px', maxWidth: '640px' }}>
+          Real-time institutional telemetry, AI curriculum ingestion status, and publication review queues.
         </p>
       </div>
 

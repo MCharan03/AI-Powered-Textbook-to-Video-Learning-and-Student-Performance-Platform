@@ -1,11 +1,28 @@
 import React, { useEffect, useState } from 'react';
+import {
+  Users,
+  GraduationCap,
+  TrendingUp,
+  Film,
+  CheckCircle2,
+  BookOpen,
+  ClipboardList,
+  AlertTriangle,
+  Calendar,
+  Check,
+  Clock,
+  ArrowRight,
+} from 'lucide-react';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { MasteryProgressBar } from '../../components/MasteryProgressBar';
 import { api } from '../../lib/api';
 import { ParentChildInfo, ParentChildProgressResponse } from '../../lib/types';
 
-const mutedText: React.CSSProperties = { color: '#64748B', fontSize: 13 };
-
+/**
+ * Parent Guardian Dashboard.
+ * Unslop refactored: Replaced emojis with Lucide SVG vectors, theme-adaptive CSS variables
+ * for full Light & Dark mode support, clean child profile card, and tabular numerals.
+ */
 export const ParentDashboard: React.FC = () => {
   const [children, setChildren] = useState<ParentChildInfo[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
@@ -64,40 +81,34 @@ export const ParentDashboard: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
-      {/* Page Header */}
+      {/* Header Context */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#2563EB', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-            <span>👨‍👩‍👧</span> Parent Portal · Student Monitoring
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--primary)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            <Users size={14} />
+            <span>Parent Portal · Student Monitoring</span>
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 750, color: '#0F172A', margin: '8px 0 4px', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', margin: '6px 0 2px', letterSpacing: '-0.015em' }}>
             My Child's Learning
           </h1>
-          <p style={{ ...mutedText, margin: 0, fontSize: 14 }}>
+          <p style={{ margin: 0, fontSize: '13.5px', color: 'var(--text-secondary)' }}>
             Real-time curriculum progress, video engagement, quiz results, and topic mastery for your child.
           </p>
         </div>
 
         {/* Child Selector Dropdown (if multiple children) */}
         {children.length > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#F8FAFC', padding: '6px 14px', borderRadius: 10, border: '1px solid #E2E8F0' }}>
-            <label htmlFor="child-select" style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>Select Child:</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', padding: '6px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+            <label htmlFor="child-select" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Child:
+            </label>
             <select
               id="child-select"
               aria-label="Select Child"
               value={selectedChildId ?? ''}
               onChange={(e) => setSelectedChildId(Number(e.target.value))}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                border: '1px solid #CBD5E1',
-                backgroundColor: '#FFFFFF',
-                color: '#0F172A',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                outline: 'none',
-              }}
+              className="adm-select"
+              style={{ width: 'auto', padding: '4px 8px', fontSize: '12.5px' }}
             >
               {children.map(child => (
                 <option key={child.id} value={child.id}>
@@ -112,7 +123,7 @@ export const ParentDashboard: React.FC = () => {
       {/* Loading & Error States */}
       {loadingChildren && (
         <SurfacePanel>
-          <div style={{ padding: 24, textAlign: 'center', color: '#64748B' }}>
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
             Loading your linked children...
           </div>
         </SurfacePanel>
@@ -121,21 +132,13 @@ export const ParentDashboard: React.FC = () => {
       {!loadingChildren && error && (
         <SurfacePanel>
           <div style={{ padding: 20, textAlign: 'center' }}>
-            <div role="alert" style={{ color: '#DC2626', fontWeight: 600, marginBottom: 12 }}>
+            <div role="alert" style={{ color: 'var(--error)', fontWeight: 600, marginBottom: 12, fontSize: '13px' }}>
               {error}
             </div>
             <button
               type="button"
               onClick={() => void fetchChildren()}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 6,
-                backgroundColor: '#2563EB',
-                color: '#FFF',
-                border: 'none',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
+              className="lrn-btn lrn-btn-primary"
             >
               Retry
             </button>
@@ -146,14 +149,16 @@ export const ParentDashboard: React.FC = () => {
       {/* Empty State: No Children Linked */}
       {!loadingChildren && !error && children.length === 0 && (
         <SurfacePanel>
-          <div style={{ padding: '48px 24px', textAlign: 'center', maxWidth: 480, margin: '0 auto' }}>
-            <div style={{ fontSize: 44, marginBottom: 12 }}>👨‍👩‍👧‍👦</div>
-            <h2 data-testid="no-children-linked" style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
+          <div style={{ padding: '48px 24px', textAlign: 'center', maxWidth: 440, margin: '0 auto' }}>
+            <div style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>
+              <Users size={36} strokeWidth={1.5} />
+            </div>
+            <h2 data-testid="no-children-linked" style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
               No children linked
             </h2>
-            <p style={{ color: '#64748B', fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
               There are currently no student accounts linked to this parent profile.
-              Please reach out to your school administrator to register and link your child's student record.
+              Please reach out to your school administrator to register and connect your child's student record.
             </p>
           </div>
         </SurfacePanel>
@@ -162,61 +167,61 @@ export const ParentDashboard: React.FC = () => {
       {/* Active Child View */}
       {!loadingChildren && !error && selectedChild && (
         <>
-          {/* Child Metadata Profile Banner */}
+          {/* Child Profile Banner */}
           <div
+            className="lrn-card"
             style={{
-              background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-              borderRadius: 14,
-              padding: '20px 24px',
-              color: '#F8FAFC',
+              padding: '18px 22px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               flexWrap: 'wrap',
               gap: 16,
-              boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)',
+              backgroundColor: 'var(--surface-raised)',
+              border: '1px solid var(--border)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <div
                 style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 26,
-                  backgroundColor: '#3B82F6',
+                  width: 44,
+                  height: 44,
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--primary)',
                   color: '#FFFFFF',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 22,
+                  fontSize: 18,
                   fontWeight: 700,
+                  flexShrink: 0,
                 }}
               >
                 {selectedChild.name.charAt(0).toUpperCase()}
               </div>
               <div>
-                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#FFFFFF' }}>
+                <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text)' }}>
                   {selectedChild.name}
                 </h2>
-                <div style={{ display: 'flex', gap: 12, marginTop: 4, fontSize: 13, color: '#94A3B8' }}>
-                  <span>Student ID: <strong style={{ color: '#E2E8F0' }}>{selectedChild.student_id}</strong></span>
+                <div style={{ display: 'flex', gap: 10, marginTop: 4, fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <span>Student ID: <strong style={{ color: 'var(--text)' }}>{selectedChild.student_id}</strong></span>
                   <span>•</span>
-                  <span>Class: <strong style={{ color: '#E2E8F0' }}>{selectedChild.class_name || 'N/A'}</strong></span>
+                  <span>Class: <strong style={{ color: 'var(--text)' }}>{selectedChild.class_name || 'N/A'}</strong></span>
                   <span>•</span>
-                  <span>Section: <strong style={{ color: '#E2E8F0' }}>{selectedChild.section || 'N/A'}</strong></span>
+                  <span>Section: <strong style={{ color: 'var(--text)' }}>{selectedChild.section || 'N/A'}</strong></span>
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255, 255, 255, 0.08)', padding: '6px 14px', borderRadius: 999 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#E2E8F0' }}>Active Enrollment</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 'var(--radius-xs)', backgroundColor: 'var(--success-soft)', color: 'var(--success)', border: '1px solid var(--border)' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--success)' }} />
+              <span style={{ fontSize: 11, fontWeight: 600 }}>Active Enrollment</span>
             </div>
           </div>
 
           {loadingProgress && (
             <SurfacePanel>
-              <div style={{ padding: 32, textAlign: 'center', color: '#64748B' }}>
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
                 Loading {selectedChild.name}'s progress...
               </div>
             </SurfacePanel>
@@ -225,77 +230,77 @@ export const ParentDashboard: React.FC = () => {
           {!loadingProgress && progress && (
             <>
               {/* 5 KPI Metric Cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
                 <KpiCard
                   label="OVERALL PROGRESS"
                   value={`${progress.overall_progress}%`}
                   detail="Curriculum completion"
-                  color="#2563EB"
-                  icon="📈"
+                  color="var(--primary)"
+                  icon={TrendingUp}
                 />
                 <KpiCard
                   label="VIDEOS COMPLETED"
                   value={`${progress.videos_completed} / ${progress.total_videos}`}
                   detail={`${progress.total_videos > 0 ? Math.round((progress.videos_completed / progress.total_videos) * 100) : 0}% watched`}
-                  color="#059669"
-                  icon="🎬"
+                  color="var(--success)"
+                  icon={Film}
                 />
                 <KpiCard
                   label="AVERAGE QUIZ SCORE"
                   value={`${progress.average_quiz_score}%`}
                   detail="Across all assessments"
-                  color="#7C3AED"
-                  icon="🎯"
+                  color="#6366F1"
+                  icon={CheckCircle2}
                 />
                 <KpiCard
                   label="TOPIC MASTERY"
                   value={`${progress.topic_mastery_percentage}%`}
                   detail="Average concept proficiency"
-                  color="#D97706"
-                  icon="🧠"
+                  color="var(--warning)"
+                  icon={BookOpen}
                 />
                 <KpiCard
                   label="ASSIGNMENTS COMPLETED"
                   value={`${progress.assignments_completed} / ${progress.total_assignments}`}
                   detail={`${progress.total_assignments > 0 ? Math.round((progress.assignments_completed / progress.total_assignments) * 100) : 0}% submitted`}
                   color="#0891B2"
-                  icon="📑"
+                  icon={ClipboardList}
                 />
               </div>
 
-              {/* Needs More Practice / Weak Topics Alert Banner */}
+              {/* Needs More Practice Banner */}
               {progress.weak_topics.length > 0 && (
                 <div
                   style={{
-                    backgroundColor: '#FEF2F2',
-                    border: '1px solid #FECACA',
-                    borderRadius: 12,
-                    padding: '16px 20px',
+                    backgroundColor: 'var(--error-soft)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '14px 18px',
                     display: 'flex',
                     alignItems: 'flex-start',
-                    gap: 14,
+                    gap: 12,
                   }}
                 >
-                  <span style={{ fontSize: 24, lineHeight: 1 }}>⚠️</span>
+                  <AlertTriangle size={20} color="var(--error)" style={{ flexShrink: 0, marginTop: 2 }} />
                   <div>
-                    <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: '#991B1B' }}>
-                      Needs More Practice
+                    <h3 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: 'var(--error)' }}>
+                      Targeted Review Recommended
                     </h3>
-                    <p style={{ margin: '0 0 10px', fontSize: 13, color: '#B91C1C' }}>
-                      Based on recent quiz attempts and performance, your child should review these focus topics:
+                    <p style={{ margin: '0 0 8px', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                      Based on recent quiz attempts, your child should review these focus topics:
                     </p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {progress.weak_topics.map((topic, i) => (
                         <span
                           key={i}
                           style={{
-                            backgroundColor: '#FFFFFF',
-                            border: '1px solid #FCA5A5',
-                            color: '#991B1B',
-                            fontSize: 12,
+                            backgroundColor: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            color: 'var(--error)',
+                            fontSize: 11.5,
                             fontWeight: 600,
-                            padding: '4px 10px',
-                            borderRadius: 6,
+                            padding: '3px 8px',
+                            borderRadius: 'var(--radius-xs)',
                           }}
                         >
                           • {topic}
@@ -307,30 +312,32 @@ export const ParentDashboard: React.FC = () => {
               )}
 
               {/* Two Column Layout: Subject Progress + Topic Mastery */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
                 {/* Subject Progress */}
                 <SurfacePanel title="Subject Progress">
                   {progress.subjects.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                       {progress.subjects.map((subj) => (
                         <div key={subj.subject_id}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                            <span style={{ fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{subj.subject_name}</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: '#2563EB' }}>{subj.progress_percentage}%</span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)' }}>{subj.subject_name}</span>
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--primary)', fontVariantNumeric: 'tabular-nums' }}>
+                              {subj.progress_percentage}%
+                            </span>
                           </div>
                           <MasteryProgressBar percentage={subj.progress_percentage} />
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p style={{ ...mutedText, margin: 0 }}>No subjects assigned to student.</p>
+                    <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '13px' }}>No subjects assigned to student.</p>
                   )}
                 </SurfacePanel>
 
                 {/* Topic Mastery */}
                 <SurfacePanel title="Topic Mastery">
                   {progress.topic_mastery.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {progress.topic_mastery.map((tm) => (
                         <div
                           key={tm.topic_id}
@@ -338,22 +345,24 @@ export const ParentDashboard: React.FC = () => {
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
-                            padding: '10px 12px',
-                            backgroundColor: '#F8FAFC',
-                            borderRadius: 8,
-                            border: '1px solid #E2E8F0',
+                            padding: '9px 12px',
+                            backgroundColor: 'var(--surface-raised)',
+                            borderRadius: 'var(--radius-md)',
+                            border: '1px solid var(--border)',
                           }}
                         >
                           <div>
-                            <div style={{ fontSize: 13, fontWeight: 650, color: '#0F172A' }}>{tm.topic_title}</div>
-                            <div style={{ fontSize: 11, color: '#64748B' }}>{tm.subject_name} · Score: {tm.score}%</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{tm.topic_title}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                              {tm.subject_name} · Score: <strong style={{ color: 'var(--text)' }}>{tm.score}%</strong>
+                            </div>
                           </div>
                           <MasteryBadge level={tm.mastery_level} />
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p style={{ ...mutedText, margin: 0 }}>No topic mastery assessments recorded yet.</p>
+                    <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '13px' }}>No topic mastery assessments recorded yet.</p>
                   )}
                 </SurfacePanel>
               </div>
@@ -361,7 +370,7 @@ export const ParentDashboard: React.FC = () => {
               {/* Video Lessons Activity */}
               <SurfacePanel
                 title="Video Lessons Progress"
-                actions={<span style={mutedText}>{progress.videos_completed} of {progress.total_videos} completed</span>}
+                actions={<span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{progress.videos_completed} of {progress.total_videos} completed</span>}
               >
                 {progress.videos.length > 0 ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
@@ -371,36 +380,37 @@ export const ParentDashboard: React.FC = () => {
                       return (
                         <div
                           key={vid.video_id}
+                          className="lrn-card"
                           style={{
-                            padding: 14,
-                            borderRadius: 10,
-                            border: `1px solid ${isCompleted ? '#A7F3D0' : (isInProgress ? '#BAE6FD' : '#E2E8F0')}`,
-                            backgroundColor: isCompleted ? '#F0FDF4' : (isInProgress ? '#F0F9FF' : '#FFFFFF'),
+                            padding: 12,
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 6,
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                            <span style={{ fontSize: 13, fontWeight: 650, color: '#0F172A' }}>
-                              {isCompleted ? '✓ ' : (isInProgress ? '▶ ' : '○ ')}
+                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {isCompleted && <Check size={14} color="var(--success)" />}
+                              {isInProgress && <Film size={14} color="var(--primary)" />}
+                              {!isCompleted && !isInProgress && <Clock size={14} color="var(--text-muted)" />}
                               {vid.title}
                             </span>
                             <span
                               style={{
                                 fontSize: 10,
-                                fontWeight: 700,
-                                padding: '2px 8px',
-                                borderRadius: 999,
+                                fontWeight: 600,
+                                padding: '2px 7px',
+                                borderRadius: 'var(--radius-xs)',
                                 textTransform: 'uppercase',
-                                backgroundColor: isCompleted ? '#DCFCE7' : (isInProgress ? '#E0F2FE' : '#F1F5F9'),
-                                color: isCompleted ? '#166534' : (isInProgress ? '#0369A1' : '#64748B'),
+                                backgroundColor: isCompleted ? 'var(--success-soft)' : (isInProgress ? 'var(--primary-soft)' : 'var(--surface-raised)'),
+                                color: isCompleted ? 'var(--success)' : (isInProgress ? 'var(--primary)' : 'var(--text-secondary)'),
+                                border: '1px solid var(--border)',
                               }}
                             >
                               {vid.status.replace('_', ' ')}
                             </span>
                           </div>
-                          <div style={{ fontSize: 11, color: '#64748B' }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                             {vid.subject_name} · {vid.topic_title}
                           </div>
                         </div>
@@ -408,59 +418,60 @@ export const ParentDashboard: React.FC = () => {
                     })}
                   </div>
                 ) : (
-                  <p style={{ ...mutedText, margin: 0 }}>No video lessons available.</p>
+                  <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '13px' }}>No video lessons available.</p>
                 )}
               </SurfacePanel>
 
-              {/* Quiz Performance (Safe: scores only, no questions/keys) */}
-              <SurfacePanel title="Quiz Performance" actions={<span style={mutedText}>Secure summary</span>}>
+              {/* Quiz Performance */}
+              <SurfacePanel title="Quiz Performance" actions={<span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Secure assessment summary</span>}>
                 {progress.quizzes.length > 0 ? (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 600 }}>
+                  <div className="adm-table-wrapper" style={{ border: 'none' }}>
+                    <table className="adm-table">
                       <thead>
-                        <tr style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #E2E8F0' }}>
-                          <th style={{ padding: '8px 12px' }}>Topic Quiz</th>
-                          <th style={{ padding: '8px 12px' }}>Subject</th>
-                          <th style={{ padding: '8px 12px' }}>Latest Score</th>
-                          <th style={{ padding: '8px 12px' }}>Best Score</th>
-                          <th style={{ padding: '8px 12px' }}>Average</th>
-                          <th style={{ padding: '8px 12px' }}>Status</th>
-                          <th style={{ padding: '8px 12px' }}>Mastery</th>
+                        <tr>
+                          <th>Topic Quiz</th>
+                          <th>Subject</th>
+                          <th>Latest Score</th>
+                          <th>Best Score</th>
+                          <th>Average</th>
+                          <th>Status</th>
+                          <th>Mastery</th>
                         </tr>
                       </thead>
                       <tbody>
                         {progress.quizzes.map((q) => (
-                          <tr key={q.quiz_id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                            <td style={{ padding: '12px', fontSize: 13, fontWeight: 600, color: '#0F172A' }}>
+                          <tr key={q.quiz_id}>
+                            <td style={{ fontWeight: 600, color: 'var(--text)' }}>
                               {q.topic_title}
                             </td>
-                            <td style={{ padding: '12px', fontSize: 12, color: '#64748B' }}>
+                            <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
                               {q.subject_name}
                             </td>
-                            <td style={{ padding: '12px', fontSize: 13, fontWeight: 700, color: q.latest_score >= 80 ? '#059669' : '#D97706' }}>
+                            <td style={{ fontWeight: 700, color: q.latest_score >= 80 ? 'var(--success)' : 'var(--warning)', fontVariantNumeric: 'tabular-nums' }}>
                               {q.latest_score}%
                             </td>
-                            <td style={{ padding: '12px', fontSize: 13, color: '#334155' }}>
+                            <td style={{ fontVariantNumeric: 'tabular-nums' }}>
                               {q.best_score}%
                             </td>
-                            <td style={{ padding: '12px', fontSize: 13, color: '#64748B' }}>
+                            <td style={{ color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
                               {q.average_score}%
                             </td>
-                            <td style={{ padding: '12px' }}>
+                            <td>
                               <span
                                 style={{
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  padding: '3px 8px',
-                                  borderRadius: 999,
-                                  backgroundColor: q.passed ? '#DCFCE7' : '#FEF3C7',
-                                  color: q.passed ? '#15803D' : '#B45309',
+                                  fontSize: 10.5,
+                                  fontWeight: 600,
+                                  padding: '2px 7px',
+                                  borderRadius: 'var(--radius-xs)',
+                                  backgroundColor: q.passed ? 'var(--success-soft)' : 'var(--warning-soft)',
+                                  color: q.passed ? 'var(--success)' : 'var(--warning)',
+                                  border: '1px solid var(--border)',
                                 }}
                               >
                                 {q.passed ? 'PASSED' : 'IN PROGRESS'}
                               </span>
                             </td>
-                            <td style={{ padding: '12px' }}>
+                            <td>
                               <MasteryBadge level={q.mastery_level} />
                             </td>
                           </tr>
@@ -469,177 +480,77 @@ export const ParentDashboard: React.FC = () => {
                     </table>
                   </div>
                 ) : (
-                  <p style={{ ...mutedText, margin: 0 }}>No quiz attempts recorded yet.</p>
+                  <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '13px' }}>No quiz attempts recorded yet.</p>
                 )}
               </SurfacePanel>
 
-              {/* Two Column Layout: Assignments + Recent Activity */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20 }}>
-                {/* Assignments */}
-                <SurfacePanel
-                  title="Assignments"
-                  actions={<span style={mutedText}>{progress.assignments.filter(a => a.status === 'GRADED' || a.status === 'SUBMITTED' || a.status === 'LATE').length} of {progress.assignments.length} completed</span>}
-                >
-                  {/* Summary Counters */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
-                    <div style={{ padding: '8px 10px', borderRadius: 8, backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', textAlign: 'center' }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Pending</div>
-                      <div style={{ fontSize: 16, fontWeight: 750, color: '#475569', marginTop: 2 }}>
-                        {progress.assignments.filter(a => a.status === 'PENDING' || a.status === 'IN_PROGRESS').length}
-                      </div>
-                    </div>
-                    <div style={{ padding: '8px 10px', borderRadius: 8, backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', textAlign: 'center' }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Submitted</div>
-                      <div style={{ fontSize: 16, fontWeight: 750, color: '#0284C7', marginTop: 2 }}>
-                        {progress.assignments.filter(a => a.status === 'SUBMITTED').length}
-                      </div>
-                    </div>
-                    <div style={{ padding: '8px 10px', borderRadius: 8, backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', textAlign: 'center' }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Overdue</div>
-                      <div style={{ fontSize: 16, fontWeight: 750, color: '#DC2626', marginTop: 2 }}>
-                        {progress.assignments.filter(a => {
-                          if (a.status === 'LATE') return true;
-                          if ((a.status === 'PENDING' || a.status === 'IN_PROGRESS') && a.due_date) {
-                            return new Date(a.due_date) < new Date();
-                          }
-                          return false;
-                        }).length}
-                      </div>
-                    </div>
-                    <div style={{ padding: '8px 10px', borderRadius: 8, backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', textAlign: 'center' }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Graded</div>
-                      <div style={{ fontSize: 16, fontWeight: 750, color: '#10B981', marginTop: 2 }}>
-                        {progress.assignments.filter(a => a.status === 'GRADED').length}
-                      </div>
-                    </div>
-                  </div>
-
-                  {progress.assignments.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {progress.assignments.map((assign) => {
-                        const isGraded = assign.status === 'GRADED';
-                        const isLate = assign.status === 'LATE';
-                        const isSubmitted = assign.status === 'SUBMITTED';
-                        const badgeBg = isGraded ? '#DCFCE7' : isLate ? '#FEE2E2' : isSubmitted ? '#E0F2FE' : '#F1F5F9';
-                        const badgeColor = isGraded ? '#15803D' : isLate ? '#DC2626' : isSubmitted ? '#0369A1' : '#475569';
-
-                        return (
-                          <div
-                            key={assign.assignment_id}
-                            style={{
-                              padding: '14px 16px',
-                              borderRadius: 8,
-                              backgroundColor: '#F8FAFC',
-                              border: '1px solid #E2E8F0',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 8,
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                              <div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{assign.title}</div>
-                                <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
-                                  {assign.subject_name}
-                                  {assign.chapter_title ? ` · ${assign.chapter_title}` : ''}
-                                  {assign.topic_title ? ` · ${assign.topic_title}` : ''}
-                                  {assign.teacher_name ? ` · Teacher: ${assign.teacher_name}` : ''}
-                                </div>
-                                {assign.due_date && (
-                                  <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
-                                    📅 Due: {new Date(assign.due_date).toLocaleDateString()}
-                                  </div>
-                                )}
-                              </div>
-                              <div style={{ textAlign: 'right' }}>
-                                <span
-                                  style={{
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    padding: '3px 8px',
-                                    borderRadius: 999,
-                                    backgroundColor: badgeBg,
-                                    color: badgeColor,
-                                  }}
-                                >
-                                  {assign.status}
-                                </span>
-                                {assign.score !== null && assign.score !== undefined && (
-                                  <div style={{ fontSize: 13, fontWeight: 750, color: '#166534', marginTop: 4 }}>
-                                    Score: {assign.score} {assign.total_points ? `/ ${assign.total_points}` : ''}
-                                  </div>
-                                )}
-                              </div>
+              {/* Assignments Section */}
+              <SurfacePanel
+                title="Assignments Progress"
+                actions={<span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{progress.assignments.filter(a => a.status === 'GRADED' || a.status === 'SUBMITTED' || a.status === 'LATE').length} of {progress.assignments.length} completed</span>}
+              >
+                {progress.assignments.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {progress.assignments.map((assign) => (
+                      <div
+                        key={assign.assignment_id}
+                        className="lrn-card"
+                        style={{
+                          padding: '12px 14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{assign.title}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                              {assign.subject_name}
+                              {assign.chapter_title ? ` · ${assign.chapter_title}` : ''}
+                              {assign.teacher_name ? ` · Teacher: ${assign.teacher_name}` : ''}
                             </div>
-
-                            {/* Teacher Feedback Note */}
-                            {assign.feedback && (
-                              <div style={{ padding: '8px 10px', borderRadius: 6, backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', fontSize: 12, color: '#15803D' }}>
-                                <strong>Teacher Feedback:</strong> "{assign.feedback}"
+                            {assign.due_date && (
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Calendar size={11} />
+                                <span>Due: {new Date(assign.due_date).toLocaleDateString()}</span>
                               </div>
                             )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p style={{ ...mutedText, margin: 0 }}>No assignments assigned yet.</p>
-                  )}
-                </SurfacePanel>
-
-                {/* Recent Learning Activity Timeline */}
-                <SurfacePanel title="Recent Learning Activity">
-                  {progress.recent_activity.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {progress.recent_activity.map((item) => (
-                        <div
-                          key={item.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: 12,
-                            paddingBottom: 10,
-                            borderBottom: '1px solid #F1F5F9',
-                          }}
-                        >
-                          <span style={{ fontSize: 18, lineHeight: 1 }}>
-                            {item.type === 'video' ? '🎬' : (item.type === 'quiz' ? '🎯' : '📑')}
-                          </span>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>
-                              {item.description}
-                            </div>
-                            <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
-                              {new Date(item.timestamp).toLocaleString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </div>
-                          </div>
-                          {item.status && (
+                          <div style={{ textAlign: 'right' }}>
                             <span
                               style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                padding: '2px 6px',
-                                borderRadius: 4,
-                                backgroundColor: '#F1F5F9',
-                                color: '#475569',
+                                fontSize: 10.5,
+                                fontWeight: 600,
+                                padding: '2px 7px',
+                                borderRadius: 'var(--radius-xs)',
+                                backgroundColor: assign.status === 'GRADED' ? 'var(--success-soft)' : (assign.status === 'LATE' ? 'var(--error-soft)' : 'var(--primary-soft)'),
+                                color: assign.status === 'GRADED' ? 'var(--success)' : (assign.status === 'LATE' ? 'var(--error)' : 'var(--primary)'),
+                                border: '1px solid var(--border)',
                               }}
                             >
-                              {item.status}
+                              {assign.status}
                             </span>
-                          )}
+                            {assign.score !== null && assign.score !== undefined && (
+                              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--success)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                                Score: {assign.score} {assign.total_points ? `/ ${assign.total_points}` : ''}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p style={{ ...mutedText, margin: 0 }}>No recent activity recorded.</p>
-                  )}
-                </SurfacePanel>
-              </div>
+
+                        {assign.feedback && (
+                          <div style={{ padding: '6px 10px', borderRadius: 'var(--radius-xs)', backgroundColor: 'var(--success-soft)', border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--success)' }}>
+                            <strong>Instructor Feedback:</strong> "{assign.feedback}"
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '13px' }}>No assignments recorded.</p>
+                )}
+              </SurfacePanel>
             </>
           )}
         </>
@@ -653,41 +564,43 @@ const KpiCard: React.FC<{
   value: string;
   detail: string;
   color: string;
-  icon: string;
-}> = ({ label, value, detail, color, icon }) => (
-  <SurfacePanel style={{ padding: '18px 20px', borderTop: `4px solid ${color}` }}>
+  icon: React.ComponentType<{ size?: number | string }>;
+}> = ({ label, value, detail, color, icon: Icon }) => (
+  <div className="lrn-card" style={{ padding: '16px' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ color: '#64748B', fontSize: 11, fontWeight: 700, letterSpacing: '.04em' }}>
+      <div style={{ color: 'var(--text-secondary)', fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase' }}>
         {label}
       </div>
-      <span style={{ fontSize: 18 }}>{icon}</span>
+      <div style={{ color, opacity: 0.85 }}>
+        <Icon size={16} />
+      </div>
     </div>
-    <div style={{ color, fontSize: 28, fontWeight: 800, marginTop: 8, letterSpacing: '-0.02em' }}>
+    <div style={{ color, fontSize: 26, fontWeight: 700, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>
       {value}
     </div>
-    <div style={{ color: '#64748B', fontSize: 12, marginTop: 4 }}>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 11.5, marginTop: 4 }}>
       {detail}
     </div>
-  </SurfacePanel>
+  </div>
 );
 
 const MasteryBadge: React.FC<{ level: string }> = ({ level }) => {
   const norm = level.toUpperCase();
-  let bg = '#F1F5F9';
-  let color = '#475569';
+  let bg = 'var(--surface-raised)';
+  let color = 'var(--text-secondary)';
   let text = norm.replace('_', ' ');
 
   if (norm === 'MASTERED' || norm === 'PROFICIENT') {
-    bg = '#DCFCE7';
-    color = '#15803D';
+    bg = 'var(--success-soft)';
+    color = 'var(--success)';
     text = 'MASTERED';
   } else if (norm === 'IN_PROGRESS' || norm === 'PRACTICING' || norm === 'INTERMEDIATE') {
-    bg = '#E0F2FE';
-    color = '#0369A1';
+    bg = 'var(--primary-soft)';
+    color = 'var(--primary)';
     text = 'IN PROGRESS';
   } else if (norm === 'NEEDS_PRACTICE' || norm === 'BEGINNER') {
-    bg = '#FEE2E2';
-    color = '#B91C1C';
+    bg = 'var(--error-soft)';
+    color = 'var(--error)';
     text = 'NEEDS PRACTICE';
   }
 
@@ -695,12 +608,13 @@ const MasteryBadge: React.FC<{ level: string }> = ({ level }) => {
     <span
       style={{
         fontSize: 10,
-        fontWeight: 700,
-        padding: '3px 8px',
-        borderRadius: 999,
+        fontWeight: 600,
+        padding: '2px 7px',
+        borderRadius: 'var(--radius-xs)',
         backgroundColor: bg,
         color,
-        letterSpacing: '.03em',
+        border: '1px solid var(--border)',
+        letterSpacing: '.02em',
       }}
     >
       {text}

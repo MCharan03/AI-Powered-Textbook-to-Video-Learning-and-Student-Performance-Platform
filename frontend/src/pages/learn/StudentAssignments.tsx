@@ -11,12 +11,23 @@ interface StudentAssignmentsProps {
   onNavigate?: (route: string, params?: any) => void;
 }
 
-const mutedText: React.CSSProperties = { color: '#64748B', fontSize: 13 };
+import {
+  ClipboardList,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  FileText,
+  Upload,
+  Calendar,
+  X,
+} from 'lucide-react';
+
+const mutedText: React.CSSProperties = { color: 'var(--text-secondary)', fontSize: 13 };
 const primaryButton: React.CSSProperties = {
-  backgroundColor: '#2563EB',
+  backgroundColor: 'var(--primary)',
   color: '#FFFFFF',
   padding: '8px 16px',
-  borderRadius: '8px',
+  borderRadius: 'var(--radius-md)',
   border: 'none',
   fontWeight: 600,
   fontSize: '13px',
@@ -26,11 +37,11 @@ const primaryButton: React.CSSProperties = {
   gap: '6px',
 };
 const secondaryButton: React.CSSProperties = {
-  backgroundColor: '#F1F5F9',
-  color: '#334155',
+  backgroundColor: 'var(--surface)',
+  color: 'var(--text)',
   padding: '8px 14px',
-  borderRadius: '8px',
-  border: '1px solid #CBD5E1',
+  borderRadius: 'var(--radius-md)',
+  border: '1px solid var(--border)',
   fontWeight: 600,
   fontSize: '13px',
   cursor: 'pointer',
@@ -38,11 +49,12 @@ const secondaryButton: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
-  borderRadius: '8px',
-  border: '1px solid #CBD5E1',
-  fontSize: '14px',
+  borderRadius: 'var(--radius-md)',
+  border: '1px solid var(--border)',
+  fontSize: '13.5px',
   outline: 'none',
-  backgroundColor: '#FFFFFF',
+  backgroundColor: 'var(--surface)',
+  color: 'var(--text)',
   boxSizing: 'border-box',
 };
 
@@ -169,10 +181,11 @@ export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({ onNaviga
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1100, margin: '0 auto', width: '100%' }}>
       {/* Header */}
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#2563EB', fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>
-          <span>📝</span> Student Portal · Assignments
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--primary)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+          <ClipboardList size={14} />
+          <span>Student Portal · Assignments</span>
         </div>
-        <h1 style={{ fontSize: 26, fontWeight: 750, color: '#0F172A', margin: '6px 0 2px' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', margin: '6px 0 2px', letterSpacing: '-0.015em' }}>
           My Assignments
         </h1>
         <p style={{ ...mutedText, margin: 0 }}>
@@ -183,36 +196,36 @@ export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({ onNaviga
       {/* Summary Cards */}
       {summary && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Pending</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#475569', marginTop: 4 }}>{summary.pending}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Not yet started</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Pending</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-secondary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.pending}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Not yet started</div>
           </div>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>In Progress</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#F59E0B', marginTop: 4 }}>{summary.in_progress}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Currently active</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>In Progress</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--warning)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.in_progress}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Currently active</div>
           </div>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Submitted</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#0284C7', marginTop: 4 }}>{summary.submitted}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Awaiting review</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Submitted</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.submitted}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Awaiting review</div>
           </div>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Overdue</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#DC2626', marginTop: 4 }}>{summary.overdue}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Past due date</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Overdue</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--error)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.overdue}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Past due date</div>
           </div>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Graded</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#10B981', marginTop: 4 }}>{summary.graded}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Evaluation complete</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Graded</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--success)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.graded}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Evaluation complete</div>
           </div>
         </div>
       )}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #E2E8F0', paddingBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
         {(['ALL', 'PENDING', 'SUBMITTED', 'GRADED'] as const).map(tab => (
           <button
             key={tab}
@@ -220,13 +233,14 @@ export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({ onNaviga
             onClick={() => setFilterTab(tab)}
             style={{
               padding: '6px 14px',
-              borderRadius: 8,
+              borderRadius: 'var(--radius-sm)',
               border: 'none',
-              fontSize: 13,
-              fontWeight: 650,
+              fontSize: 12.5,
+              fontWeight: 600,
               cursor: 'pointer',
-              backgroundColor: filterTab === tab ? '#2563EB' : '#F1F5F9',
-              color: filterTab === tab ? '#FFFFFF' : '#475569',
+              backgroundColor: filterTab === tab ? 'var(--primary)' : 'var(--surface-raised)',
+              color: filterTab === tab ? '#FFFFFF' : 'var(--text-secondary)',
+              transition: 'all var(--duration-fast) var(--ease)',
             }}
           >
             {tab === 'ALL' ? 'All Assignments' : tab === 'PENDING' ? 'Pending & In Progress' : tab === 'SUBMITTED' ? 'Submitted & Late' : 'Graded'}
@@ -237,11 +251,13 @@ export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({ onNaviga
       {/* Assignment List */}
       <SurfacePanel title="Assigned Work" actions={<span style={mutedText}>{filteredAssignments.length} found</span>}>
         {loading && <p style={{ ...mutedText, margin: '16px 0' }}>Loading your assignments…</p>}
-        {error && <div style={{ color: '#DC2626', padding: '12px 0' }}>{error}</div>}
+        {error && <div style={{ color: 'var(--error)', padding: '12px 0' }}>{error}</div>}
         {!loading && !error && filteredAssignments.length === 0 && (
-          <div style={{ padding: '36px 16px', textAlign: 'center', color: '#64748B' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🎉</div>
-            <div style={{ fontWeight: 650, fontSize: 16, color: '#1E293B' }}>No assignments in this view</div>
+          <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+            <div style={{ color: 'var(--text-secondary)', marginBottom: 8 }}>
+              <CheckCircle2 size={32} />
+            </div>
+            <div style={{ fontWeight: 650, fontSize: 15, color: 'var(--text)' }}>No assignments in this view</div>
             <p style={{ ...mutedText, marginTop: 4 }}>
               You're all caught up! When a teacher assigns tasks to your class, they will appear here.
             </p>

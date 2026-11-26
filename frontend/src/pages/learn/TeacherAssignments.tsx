@@ -12,12 +12,24 @@ import {
   TopicItem,
 } from '../../lib/types';
 
-const mutedText: React.CSSProperties = { color: '#64748B', fontSize: 13 };
+import {
+  ClipboardList,
+  Plus,
+  FileText,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  Calendar,
+  X,
+  Upload,
+} from 'lucide-react';
+
+const mutedText: React.CSSProperties = { color: 'var(--text-secondary)', fontSize: 13 };
 const primaryButton: React.CSSProperties = {
-  backgroundColor: '#2563EB',
+  backgroundColor: 'var(--primary)',
   color: '#FFFFFF',
   padding: '8px 16px',
-  borderRadius: '8px',
+  borderRadius: 'var(--radius-md)',
   border: 'none',
   fontWeight: 600,
   fontSize: '13px',
@@ -27,21 +39,21 @@ const primaryButton: React.CSSProperties = {
   gap: '6px',
 };
 const secondaryButton: React.CSSProperties = {
-  backgroundColor: '#F1F5F9',
-  color: '#334155',
+  backgroundColor: 'var(--surface)',
+  color: 'var(--text)',
   padding: '8px 14px',
-  borderRadius: '8px',
-  border: '1px solid #CBD5E1',
+  borderRadius: 'var(--radius-md)',
+  border: '1px solid var(--border)',
   fontWeight: 600,
   fontSize: '13px',
   cursor: 'pointer',
 };
 const dangerButton: React.CSSProperties = {
-  backgroundColor: '#FEE2E2',
-  color: '#DC2626',
+  backgroundColor: 'var(--error-soft)',
+  color: 'var(--error)',
   padding: '6px 12px',
-  borderRadius: '6px',
-  border: '1px solid #FCA5A5',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border)',
   fontWeight: 600,
   fontSize: '12px',
   cursor: 'pointer',
@@ -49,11 +61,12 @@ const dangerButton: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
-  borderRadius: '8px',
-  border: '1px solid #CBD5E1',
-  fontSize: '14px',
+  borderRadius: 'var(--radius-md)',
+  border: '1px solid var(--border)',
+  fontSize: '13.5px',
   outline: 'none',
-  backgroundColor: '#FFFFFF',
+  backgroundColor: 'var(--surface)',
+  color: 'var(--text)',
   boxSizing: 'border-box',
 };
 
@@ -312,10 +325,11 @@ export const TeacherAssignments: React.FC = () => {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#2563EB', fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>
-            <span>📝</span> Teacher Portal · Assignments
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--primary)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            <ClipboardList size={14} />
+            <span>Teacher Portal · Assignments</span>
           </div>
-          <h1 style={{ fontSize: 26, fontWeight: 750, color: '#0F172A', margin: '6px 0 2px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', margin: '6px 0 2px', letterSpacing: '-0.015em' }}>
             Assignment Management
           </h1>
           <p style={{ ...mutedText, margin: 0 }}>
@@ -327,37 +341,38 @@ export const TeacherAssignments: React.FC = () => {
           onClick={handleOpenCreateModal}
           style={primaryButton}
         >
-          <span>➕</span> Create Assignment
+          <Plus size={15} />
+          <span>Create Assignment</span>
         </button>
       </div>
 
       {/* Summary Metrics */}
       {summary && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Total Assignments</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#1E293B', marginTop: 4 }}>{summary.total_assignments}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Created by you</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Total Assignments</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.total_assignments}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Created by you</div>
           </div>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Pending Submissions</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#F59E0B', marginTop: 4 }}>{summary.pending_submissions}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Awaiting student work</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Pending Submissions</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--warning)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.pending_submissions}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Awaiting student work</div>
           </div>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Submitted</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#0284C7', marginTop: 4 }}>{summary.submitted}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Total student turn-ins</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Submitted</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.submitted}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Total student turn-ins</div>
           </div>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>To Be Graded</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#8B5CF6', marginTop: 4 }}>{summary.to_be_graded}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Needs teacher evaluation</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>To Be Graded</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: '#8B5CF6', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.to_be_graded}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Needs teacher evaluation</div>
           </div>
-          <div style={{ padding: '16px 20px', borderRadius: 12, backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Graded</div>
-            <div style={{ fontSize: 28, fontWeight: 750, color: '#10B981', marginTop: 4 }}>{summary.graded}</div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Evaluated with feedback</div>
+          <div className="lrn-card" style={{ padding: '16px 20px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Graded</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--success)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{summary.graded}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Evaluated with feedback</div>
           </div>
         </div>
       )}
@@ -365,16 +380,19 @@ export const TeacherAssignments: React.FC = () => {
       {/* Main List */}
       <SurfacePanel title="My Assignments" actions={<span style={mutedText}>{assignments.length} assignments</span>}>
         {loading && <p style={{ ...mutedText, margin: '16px 0' }}>Loading assignments…</p>}
-        {error && <div style={{ color: '#DC2626', padding: '12px 0' }}>{error}</div>}
+        {error && <div style={{ color: 'var(--error)', padding: '12px 0' }}>{error}</div>}
         {!loading && !error && assignments.length === 0 && (
-          <div style={{ padding: '36px 16px', textAlign: 'center', color: '#64748B' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
-            <div style={{ fontWeight: 650, fontSize: 16, color: '#1E293B' }}>No assignments created yet</div>
+          <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+            <div style={{ color: 'var(--text-secondary)', marginBottom: 8 }}>
+              <ClipboardList size={32} />
+            </div>
+            <div style={{ fontWeight: 650, fontSize: 16, color: 'var(--text)' }}>No assignments created yet</div>
             <p style={{ ...mutedText, marginTop: 4, maxWidth: 420, margin: '4px auto 16px' }}>
               Create your first assignment and assign it to your students from the curriculum structure.
             </p>
             <button type="button" onClick={handleOpenCreateModal} style={primaryButton}>
-              Create Assignment
+              <Plus size={15} />
+              <span>Create Assignment</span>
             </button>
           </div>
         )}

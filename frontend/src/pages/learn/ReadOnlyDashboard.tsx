@@ -1,16 +1,31 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import {
+  GraduationCap,
+  Users,
+  TrendingUp,
+  CheckCircle2,
+  AlertTriangle,
+  ClipboardList,
+  BookOpen,
+  ArrowRight,
+  ShieldCheck,
+  BarChart3,
+} from 'lucide-react';
 import { SurfacePanel } from '../../components/SurfacePanel';
 import { MasteryProgressBar } from '../../components/MasteryProgressBar';
 import { useAuth } from '../../lib/authContext';
 import { api } from '../../lib/api';
 import { ObserverDashboardSummary, ObserverStudentAnalytics } from '../../lib/types';
 
-const mutedText: React.CSSProperties = { color: '#64748B', fontSize: 13 };
-
 interface ReadOnlyDashboardProps {
   onNavigate?: (route: string) => void;
 }
 
+/**
+ * Teacher & Academic Observer Dashboard.
+ * Unslop refactored: Theme-adaptive tokens, SVG vector iconography,
+ * high-density cohort metrics, and accessible data tables for Light & Dark mode.
+ */
 export const ReadOnlyDashboard: React.FC<ReadOnlyDashboardProps> = ({ onNavigate }) => {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState<ObserverDashboardSummary | null>(null);
@@ -45,100 +60,179 @@ export const ReadOnlyDashboard: React.FC<ReadOnlyDashboardProps> = ({ onNavigate
   const isTeacher = user?.role === 'teacher';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 22, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '22px', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+      {/* Header Context */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: '#1D4ED8', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-            <span aria-hidden="true">{isTeacher ? '👨‍🏫' : '🛡️'}</span> {isTeacher ? 'Teacher Portal · Class Analytics' : 'Academic Observer Portal'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            {isTeacher ? <GraduationCap size={15} /> : <ShieldCheck size={15} />}
+            <span>{isTeacher ? 'Teacher Portal · Class Analytics' : 'Academic Observer Portal'}</span>
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 750, color: '#0F172A', margin: '8px 0 4px', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', margin: '6px 0 2px', letterSpacing: '-0.015em' }}>
             {isTeacher ? 'My Students & Class Performance' : 'Academic Progress Overview'}
           </h1>
-          <p style={{ ...mutedText, margin: 0, fontSize: 14 }}>
+          <p style={{ margin: 0, fontSize: '13.5px', color: 'var(--text-secondary)' }}>
             {isTeacher
               ? 'Comprehensive cohort metrics, student performance table, topic mastery, and learning analytics for your assigned students.'
               : 'Progress and mastery for students connected to your account.'}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {isTeacher && onNavigate && (
             <button
               type="button"
               onClick={() => onNavigate('teacher-assignments')}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 8,
-                background: '#2563EB',
-                color: '#FFFFFF',
-                fontSize: 13,
-                fontWeight: 700,
-                border: 'none',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
+              className="lrn-btn lrn-btn-primary"
             >
-              📝 Manage Assignments →
+              <ClipboardList size={14} />
+              <span>Manage Assignments</span>
+              <ArrowRight size={13} />
             </button>
           )}
-          <span style={{ padding: '6px 12px', borderRadius: 999, background: '#DBEAFE', color: '#1D4ED8', fontSize: 11, fontWeight: 700 }}>
-            {isTeacher ? 'TEACHER ACCESS' : 'READ ONLY'}
+          <span
+            style={{
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-xs)',
+              backgroundColor: 'var(--primary-soft)',
+              color: 'var(--primary)',
+              fontSize: '11px',
+              fontWeight: 700,
+              border: '1px solid var(--border)',
+              letterSpacing: '0.04em',
+            }}
+          >
+            {isTeacher ? 'TEACHER ACCESS' : 'OBSERVER ACCESS'}
           </span>
         </div>
       </div>
 
-      {loading && <SurfacePanel><p style={{ ...mutedText, margin: 0 }}>Loading your academic overview…</p></SurfacePanel>}
-      {!loading && error && (
+      {loading && (
         <SurfacePanel>
-          <div role="alert" style={{ color: '#B91C1C', marginBottom: 12 }}>{error}</div>
-          <button type="button" onClick={() => void loadDashboard()} style={secondaryButton}>Try again</button>
+          <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '13px' }}>Loading your academic overview…</p>
         </SurfacePanel>
       )}
+
+      {!loading && error && (
+        <SurfacePanel>
+          <div role="alert" style={{ color: 'var(--error)', marginBottom: 12, fontSize: '13px' }}>{error}</div>
+          <button type="button" onClick={() => void loadDashboard()} className="lrn-btn lrn-btn-secondary">Try again</button>
+        </SurfacePanel>
+      )}
+
       {!loading && !error && dashboard && dashboard.students.length === 0 && (
         <SurfacePanel>
-          <h2 style={sectionTitle}>No students linked yet</h2>
-          <p style={{ ...mutedText, marginBottom: 0 }}>Your account does not currently have linked students. Ask your school administrator to connect the student profile.</p>
+          <h2 style={{ color: 'var(--text)', fontSize: '16px', margin: '0 0 8px' }}>No students linked yet</h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: 0, fontSize: '13px' }}>
+            Your account does not currently have linked students. Contact your school administrator to link student profiles.
+          </p>
         </SurfacePanel>
       )}
 
       {!loading && !error && dashboard && dashboard.students.length > 0 && (
         <>
+          {/* Key KPI Metric Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-            <MetricCard label="LINKED STUDENTS" value={dashboard.students_count} detail={dashboard.role === 'parent' ? 'Children on your account' : 'Assigned to your account'} color="#2563EB" />
-            <MetricCard label="AVERAGE MASTERY" value={`${dashboard.average_mastery_percentage}%`} detail="Across linked students" color="#4F46E5" />
-            <MetricCard label="AVERAGE QUIZ SCORE" value={`${dashboard.average_quiz_score}%`} detail="Based on submitted quizzes" color="#0891B2" />
-            <MetricCard label="VIDEO COMPLETION" value={`${dashboard.video_completion_percentage}%`} detail="Published lessons completed" color="#059669" />
-            <MetricCard label="NEEDS ATTENTION" value={dashboard.students_needing_attention} detail="Below mastery target or has focus areas" color={dashboard.students_needing_attention ? '#DC2626' : '#059669'} />
+            <MetricCard
+              label="LINKED STUDENTS"
+              value={dashboard.students_count}
+              detail={dashboard.role === 'parent' ? 'Children on your account' : 'Assigned learners'}
+              color="var(--primary)"
+              icon={Users}
+            />
+            <MetricCard
+              label="AVERAGE MASTERY"
+              value={`${dashboard.average_mastery_percentage}%`}
+              detail="Across linked students"
+              color="#6366F1"
+              icon={TrendingUp}
+            />
+            <MetricCard
+              label="AVERAGE QUIZ SCORE"
+              value={`${dashboard.average_quiz_score}%`}
+              detail="Based on submitted quizzes"
+              color="#0891B2"
+              icon={CheckCircle2}
+            />
+            <MetricCard
+              label="VIDEO COMPLETION"
+              value={`${dashboard.video_completion_percentage}%`}
+              detail="Published lessons completed"
+              color="var(--success)"
+              icon={BookOpen}
+            />
+            <MetricCard
+              label="NEEDS ATTENTION"
+              value={dashboard.students_needing_attention}
+              detail="Below mastery target threshold"
+              color={dashboard.students_needing_attention ? 'var(--error)' : 'var(--success)'}
+              icon={AlertTriangle}
+            />
           </div>
 
-          <SurfacePanel title="Assessment trend" actions={<span style={mutedText}>Monthly average score</span>}>
+          {/* Assessment Trend Chart */}
+          <SurfacePanel title="Assessment Trend" subtitle="Monthly average performance score across all student quiz submissions">
             <ScoreTrend points={dashboard.score_trend} />
           </SurfacePanel>
 
-          <SurfacePanel title="Student overview" actions={<span style={mutedText}>{dashboard.students_count} student{dashboard.students_count === 1 ? '' : 's'}</span>}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 670, textAlign: 'left' }}>
+          {/* Student Overview Table */}
+          <SurfacePanel
+            title="Student Cohort Overview"
+            actions={<span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{dashboard.students_count} active student{dashboard.students_count === 1 ? '' : 's'}</span>}
+          >
+            <div className="adm-table-wrapper" style={{ border: 'none' }}>
+              <table className="adm-table">
                 <thead>
-                  <tr style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase' }}>
-                    {['Student', 'Mastery', 'Topics', 'Quiz average', 'Focus areas'].map(label => <th key={label} style={tableHead}>{label}</th>)}
+                  <tr>
+                    {['Student', 'Mastery', 'Topics', 'Quiz Average', 'Focus Areas'].map(label => (
+                      <th key={label}>{label}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {dashboard.students.map(student => (
-                    <tr key={student.student_id} style={{ borderTop: '1px solid #E2E8F0', background: selectedStudent?.student_id === student.student_id ? '#F8FAFC' : 'white' }}>
-                      <td style={tableCell}>
-                        <button type="button" onClick={() => setSelectedStudentId(student.student_id)} style={studentButton}>
-                          <span style={{ fontWeight: 650, color: '#0F172A' }}>{student.student_name}</span>
-                          <span style={mutedText}>{student.student_code}{student.class_name ? ` · ${student.class_name}${student.section ? `-${student.section}` : ''}` : ''}</span>
-                        </button>
-                      </td>
-                      <td style={tableCell}><span style={{ color: student.mastery_percentage < 80 ? '#B45309' : '#047857', fontWeight: 700 }}>{student.mastery_percentage}%</span></td>
-                      <td style={tableCell}>{student.topics_completed} / {student.total_topics}</td>
-                      <td style={tableCell}>{student.average_quiz_score}% <span style={mutedText}>({student.quizzes_taken})</span></td>
-                      <td style={tableCell}>{student.weak_concepts.length ? <span style={{ color: '#B91C1C' }}>{student.weak_concepts.length} identified</span> : <span style={{ color: '#047857' }}>None</span>}</td>
-                    </tr>
-                  ))}
+                  {dashboard.students.map(student => {
+                    const isSelected = selectedStudent?.student_id === student.student_id;
+                    return (
+                      <tr
+                        key={student.student_id}
+                        style={{
+                          backgroundColor: isSelected ? 'var(--surface-raised)' : 'transparent',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => setSelectedStudentId(student.student_id)}
+                      >
+                        <td>
+                          <div style={{ display: 'grid', gap: '2px' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text)' }}>{student.student_name}</span>
+                            <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                              {student.student_code}{student.class_name ? ` · ${student.class_name}${student.section ? `-${student.section}` : ''}` : ''}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <span style={{ color: student.mastery_percentage < 80 ? 'var(--warning)' : 'var(--success)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                            {student.mastery_percentage}%
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{student.topics_completed} / {student.total_topics}</span>
+                        </td>
+                        <td>
+                          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{student.average_quiz_score}%</span>
+                          <span style={{ color: 'var(--text-secondary)', fontSize: '11px', marginLeft: '4px' }}>({student.quizzes_taken})</span>
+                        </td>
+                        <td>
+                          {student.weak_concepts.length ? (
+                            <span style={{ color: 'var(--error)', fontWeight: 600, fontSize: '12px' }}>
+                              {student.weak_concepts.length} identified
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--success)', fontSize: '12px', fontWeight: 500 }}>None</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -151,27 +245,61 @@ export const ReadOnlyDashboard: React.FC<ReadOnlyDashboardProps> = ({ onNavigate
   );
 };
 
-const MetricCard: React.FC<{ label: string; value: string | number; detail: string; color: string }> = ({ label, value, detail, color }) => (
-  <SurfacePanel style={{ padding: 18 }}>
-    <div style={{ color: '#64748B', fontSize: 11, fontWeight: 700, letterSpacing: '.03em' }}>{label}</div>
-    <div style={{ color, fontSize: 27, fontWeight: 750, marginTop: 7 }}>{value}</div>
-    <div style={{ ...mutedText, fontSize: 11, marginTop: 5 }}>{detail}</div>
-  </SurfacePanel>
+const MetricCard: React.FC<{
+  label: string;
+  value: string | number;
+  detail: string;
+  color: string;
+  icon: React.ComponentType<{ size?: number | string }>;
+}> = ({ label, value, detail, color, icon: Icon }) => (
+  <div className="lrn-card" style={{ padding: '16px' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ color: 'var(--text-secondary)', fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+        {label}
+      </div>
+      <div style={{ color, opacity: 0.85 }}>
+        <Icon size={16} />
+      </div>
+    </div>
+    <div style={{ color, fontSize: 26, fontWeight: 700, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>
+      {value}
+    </div>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 11.5, marginTop: 4 }}>
+      {detail}
+    </div>
+  </div>
 );
 
 const ScoreTrend: React.FC<{ points: ObserverDashboardSummary['score_trend'] }> = ({ points }) => {
-  if (!points.length) return <p style={{ ...mutedText, margin: 0 }}>No quiz assessments are available for the recent six-month period.</p>;
+  if (!points.length) {
+    return <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '13px' }}>No quiz assessments recorded for the recent six-month period.</p>;
+  }
   const maxScore = Math.max(100, ...points.map(point => point.average_score));
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${points.length}, minmax(46px, 1fr))`, alignItems: 'end', gap: 12, minHeight: 150 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${points.length}, minmax(46px, 1fr))`, alignItems: 'end', gap: 12, minHeight: 140, paddingTop: 16 }}>
       {points.map(point => {
-        const height = Math.max(8, (point.average_score / maxScore) * 112);
+        const height = Math.max(10, (point.average_score / maxScore) * 100);
         const month = new Date(`${point.month}-01T00:00:00`).toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
         return (
-          <div key={point.month} title={`${month}: ${point.average_score}% across ${point.assessments_count} assessment${point.assessments_count === 1 ? '' : 's'}`} style={{ display: 'flex', alignItems: 'center', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontSize: 11, color: '#475569', fontWeight: 650 }}>{point.average_score}%</span>
-            <div role="img" aria-label={`${month} average quiz score ${point.average_score}%`} style={{ width: 'min(100%, 64px)', height, background: 'linear-gradient(180deg, #60A5FA, #2563EB)', borderRadius: '7px 7px 2px 2px' }} />
-            <span style={{ fontSize: 10, color: '#64748B', whiteSpace: 'nowrap' }}>{month}</span>
+          <div key={point.month} title={`${month}: ${point.average_score}% across ${point.assessments_count} assessment(s)`} style={{ display: 'flex', alignItems: 'center', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--text)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+              {point.average_score}%
+            </span>
+            <div
+              role="img"
+              aria-label={`${month} average score ${point.average_score}%`}
+              style={{
+                width: 'min(100%, 48px)',
+                height,
+                backgroundColor: 'var(--primary)',
+                borderRadius: '4px 4px 1px 1px',
+                transition: 'height 250ms ease',
+              }}
+            />
+            <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+              {month}
+            </span>
           </div>
         );
       })}
@@ -181,34 +309,37 @@ const ScoreTrend: React.FC<{ points: ObserverDashboardSummary['score_trend'] }> 
 
 const StudentDetail: React.FC<{ student: ObserverStudentAnalytics }> = ({ student }) => (
   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
-    <SurfacePanel title={`${student.student_name} · topic mastery`}>
+    <SurfacePanel title={`${student.student_name} · Topic Mastery`}>
       {student.topic_mastery.length ? (
-        <div style={{ display: 'grid', gap: 13 }}>
+        <div style={{ display: 'grid', gap: 12 }}>
           {student.topic_mastery.map(topic => (
             <div key={topic.topic}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 5 }}>
-                <span style={{ fontSize: 13, color: '#334155' }}>{topic.topic}</span>
-                <span style={{ fontSize: 12, color: '#64748B' }}>{topic.score}%</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+                <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 500 }}>{topic.topic}</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{topic.score}%</span>
               </div>
               <MasteryProgressBar percentage={topic.score} />
             </div>
           ))}
         </div>
-      ) : <p style={{ ...mutedText, margin: 0 }}>No topic assessments recorded yet.</p>}
+      ) : (
+        <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '13px' }}>No topic assessments recorded yet.</p>
+      )}
     </SurfacePanel>
-    <SurfacePanel title="Focus areas">
+
+    <SurfacePanel title="Focus Areas & Remediation">
       {student.weak_concepts.length ? (
-        <ul style={{ paddingLeft: 20, margin: 0, display: 'grid', gap: 8, color: '#991B1B', fontSize: 13 }}>
+        <ul style={{ paddingLeft: 18, margin: 0, display: 'grid', gap: 6, color: 'var(--error)', fontSize: '13px' }}>
           {student.weak_concepts.map(concept => <li key={concept}>{concept}</li>)}
         </ul>
-      ) : <p style={{ color: '#047857', fontSize: 13, margin: 0 }}>No focus areas have been identified from quiz attempts.</p>}
-      <div style={{ ...mutedText, marginTop: 16 }}>Completed {student.videos_completed} of {student.total_videos} published video lessons.</div>
+      ) : (
+        <p style={{ color: 'var(--success)', fontSize: '13px', margin: 0, fontWeight: 500 }}>
+          ✓ No focus areas identified — student is meeting mastery thresholds.
+        </p>
+      )}
+      <div style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: 16 }}>
+        Completed {student.videos_completed} of {student.total_videos} published video lessons.
+      </div>
     </SurfacePanel>
   </div>
 );
-
-const sectionTitle: React.CSSProperties = { color: '#0F172A', fontSize: 16, margin: '0 0 8px' };
-const tableHead: React.CSSProperties = { padding: '0 12px 12px', fontWeight: 700 };
-const tableCell: React.CSSProperties = { padding: '13px 12px', fontSize: 13, color: '#334155', verticalAlign: 'middle' };
-const studentButton: React.CSSProperties = { display: 'grid', gap: 4, textAlign: 'left', border: 0, background: 'transparent', padding: 0, cursor: 'pointer' };
-const secondaryButton: React.CSSProperties = { border: '1px solid #CBD5E1', borderRadius: 7, padding: '8px 12px', color: '#334155', background: '#F8FAFC', cursor: 'pointer' };

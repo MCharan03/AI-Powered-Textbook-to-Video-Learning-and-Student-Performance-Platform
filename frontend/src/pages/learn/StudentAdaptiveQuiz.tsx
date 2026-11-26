@@ -109,11 +109,11 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
     return (
       <SurfacePanel>
         <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-          <div style={{ fontSize: '32px', color: '#D97706' }}>💡</div>
-          <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', marginTop: '12px' }}>
+          <div style={{ fontSize: '32px', color: 'var(--learn-warning, #D97706)' }}>💡</div>
+          <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text)', marginTop: '12px' }}>
             No Active Remediation Session
           </h2>
-          <p style={{ fontSize: '14px', color: '#64748B', marginTop: '6px', maxWidth: '480px', margin: '6px auto 0' }}>
+          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '6px', maxWidth: '480px', margin: '6px auto 0' }}>
             {loadError}
           </p>
           <button
@@ -122,7 +122,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
               marginTop: '16px',
               padding: '8px 18px',
               borderRadius: '6px',
-              backgroundColor: '#2563EB',
+              backgroundColor: 'var(--primary)',
               color: '#FFF',
               border: 'none',
               fontWeight: 600,
@@ -140,28 +140,28 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
   if (resultSummary && adaptiveQuiz) {
     return (
       <div style={{ maxWidth: '720px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0F172A', textAlign: 'center' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', textAlign: 'center' }}>
           Adaptive Remediation Results
         </h1>
         <SurfacePanel>
           <div style={{ textAlign: 'center', padding: '16px' }}>
-            <div style={{ fontSize: '36px', color: resultSummary.passed ? '#10B981' : '#F59E0B', marginBottom: '12px' }}>
+            <div style={{ fontSize: '36px', color: resultSummary.passed ? 'var(--learn-success, #10B981)' : 'var(--learn-warning, #F59E0B)', marginBottom: '12px' }}>
               {resultSummary.passed ? '🎉' : '📝'}
             </div>
-            <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)' }}>
               {resultSummary.percentage}% — {resultSummary.passed ? 'Concepts Reinforced' : 'Keep Practicing'}
             </h2>
-            <p style={{ fontSize: '14px', color: '#64748B', marginTop: '8px' }}>
+            <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '8px' }}>
               {resultSummary.recommendation || 'Your mastery metrics have been updated.'}
             </p>
             {resultSummary.weak_concepts.length > 0 && (
               <div style={{ marginTop: '14px' }}>
-                <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 500 }}>Still targeting:</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>Still targeting:</span>
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '6px' }}>
                   {resultSummary.weak_concepts.map((c, idx) => (
                     <span key={idx} style={{
                       padding: '2px 8px', borderRadius: '12px',
-                      backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#DC2626',
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--learn-error, #DC2626)',
                       fontSize: '11px', fontWeight: 600,
                     }}>
                       {c}
@@ -174,7 +174,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
               <button
                 onClick={() => onNavigate('student-mastery')}
                 style={{
-                  padding: '10px 20px', borderRadius: '8px', backgroundColor: '#2563EB',
+                  padding: '10px 20px', borderRadius: '8px', backgroundColor: 'var(--primary)',
                   color: '#FFF', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
                 }}
               >
@@ -183,8 +183,8 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
               <button
                 onClick={() => onNavigate('student-dashboard')}
                 style={{
-                  padding: '10px 20px', borderRadius: '8px', backgroundColor: '#F1F5F9',
-                  color: '#475569', border: '1px solid #CBD5E1', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                  padding: '10px 20px', borderRadius: '8px', backgroundColor: 'var(--surface-raised)',
+                  color: 'var(--text)', border: '1px solid var(--border)', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
                 }}
               >
                 Back to Dashboard
@@ -201,27 +201,27 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
                 key={qr.question_id || qidx}
                 style={{
                   padding: '16px 20px', borderRadius: '12px',
-                  backgroundColor: qr.is_correct ? '#F0FDF4' : '#FEF2F2',
-                  border: `1px solid ${qr.is_correct ? '#BBF7D0' : '#FECACA'}`,
+                  backgroundColor: qr.is_correct ? 'var(--surface-raised)' : 'var(--surface-raised)',
+                  border: `1px solid ${qr.is_correct ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
                   display: 'flex', flexDirection: 'column', gap: '8px',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, fontSize: '14px', color: '#0F172A' }}>
+                  <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>
                     Q{qidx + 1}. {qr.question_text}
                   </span>
                   <span style={{
                     fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '12px',
-                    backgroundColor: qr.is_correct ? '#16A34A' : '#DC2626', color: '#FFFFFF',
+                    backgroundColor: qr.is_correct ? 'var(--learn-success, #16A34A)' : 'var(--learn-error, #DC2626)', color: '#FFFFFF',
                   }}>
                     {qr.is_correct ? 'CORRECT' : 'INCORRECT'}
                   </span>
                 </div>
-                <div style={{ fontSize: '13px', color: '#475569' }}>
-                  Your Answer: <strong style={{ color: qr.is_correct ? '#16A34A' : '#DC2626' }}>{String(qr.selected_answer)}</strong> • Correct Answer: <strong style={{ color: '#16A34A' }}>{String(qr.correct_answer)}</strong>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Your Answer: <strong style={{ color: qr.is_correct ? 'var(--learn-success, #16A34A)' : 'var(--learn-error, #DC2626)' }}>{String(qr.selected_answer)}</strong> • Correct Answer: <strong style={{ color: 'var(--learn-success, #16A34A)' }}>{String(qr.correct_answer)}</strong>
                 </div>
                 {qr.explanation && (
-                  <div style={{ fontSize: '12px', color: '#334155', backgroundColor: 'rgba(255,255,255,0.7)', padding: '10px 12px', borderRadius: '8px', marginTop: '4px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text)', backgroundColor: 'var(--surface)', padding: '10px 12px', borderRadius: '8px', marginTop: '4px', border: '1px solid var(--border)' }}>
                     <strong>Explanation:</strong> {qr.explanation}
                   </div>
                 )}
@@ -269,11 +269,11 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
             >
               STAGE 6 ADAPTIVE REMEDIATION
             </span>
-            <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A', marginTop: '4px' }}>
+            <h1 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', marginTop: '4px' }}>
               Targeted Concept Practice
             </h1>
           </div>
-          <span style={{ fontSize: '13px', color: '#64748B' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
             Question {currentIdx + 1} of {adaptiveQuiz.questions.length}
           </span>
         </div>
@@ -281,7 +281,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
         {/* Targeted Weak Concepts Tags */}
         {weakConcepts.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 500 }}>Targeting:</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>Targeting:</span>
             {weakConcepts.map((c, idx) => (
               <span
                 key={idx}
@@ -289,7 +289,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
                   padding: '2px 8px',
                   borderRadius: '12px',
                   backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                  color: '#DC2626',
+                  color: 'var(--learn-error, #DC2626)',
                   fontSize: '11px',
                   fontWeight: 600,
                 }}
@@ -304,8 +304,8 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
       {submitError && (
         <div style={{
           padding: '12px 16px', borderRadius: '10px',
-          backgroundColor: '#FEF2F2', border: '1px solid #FECACA',
-          color: '#B91C1C', fontSize: '13px', fontWeight: 500,
+          backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
+          color: 'var(--learn-error, #B91C1C)', fontSize: '13px', fontWeight: 500,
         }}>
           ⚠ {submitError}
         </div>
@@ -313,7 +313,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
 
       <SurfacePanel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <h2 style={{ fontSize: '17px', fontWeight: 600, color: '#0F172A', lineHeight: '24px' }}>
+          <h2 style={{ fontSize: '17px', fontWeight: 600, color: 'var(--text)', lineHeight: '24px' }}>
             {currentIdx + 1}. {currentQ.question_text}
           </h2>
 
@@ -341,8 +341,8 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
                 padding: '8px 16px',
                 borderRadius: '6px',
                 backgroundColor: 'transparent',
-                border: '1px solid #CBD5E1',
-                color: '#64748B',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
                 cursor: currentIdx === 0 ? 'not-allowed' : 'pointer',
                 opacity: currentIdx === 0 ? 0.5 : 1,
               }}
@@ -357,7 +357,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
                 style={{
                   padding: '10px 24px',
                   borderRadius: '8px',
-                  backgroundColor: '#059669',
+                  backgroundColor: 'var(--learn-success, #059669)',
                   color: '#FFFFFF',
                   border: 'none',
                   fontWeight: 600,
@@ -374,7 +374,7 @@ export const StudentAdaptiveQuiz: React.FC<StudentAdaptiveQuizProps> = ({ onNavi
                 style={{
                   padding: '8px 20px',
                   borderRadius: '6px',
-                  backgroundColor: '#2563EB',
+                  backgroundColor: 'var(--primary)',
                   color: '#FFFFFF',
                   border: 'none',
                   fontWeight: 600,

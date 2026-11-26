@@ -1,4 +1,15 @@
 import React from 'react';
+import {
+  LayoutDashboard,
+  ClipboardList,
+  Film,
+  CheckCircle2,
+  RotateCcw,
+  TrendingUp,
+  Users,
+  GraduationCap,
+  Sparkles,
+} from 'lucide-react';
 import { useAuth } from '../lib/authContext';
 
 interface SidebarNavProps {
@@ -6,31 +17,37 @@ interface SidebarNavProps {
   onRouteChange: (route: string) => void;
 }
 
+interface NavItemDef {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number | string; strokeWidth?: number | string }>;
+}
+
 /**
  * Learning-portal navigation (Student / Parent / Teacher).
- * The admin portal renders its own dedicated AdminSidebar component.
+ * Unslop refactored: Crisp SVG icons, tactile interactive states, restrained typography.
  */
 export const SidebarNav: React.FC<SidebarNavProps> = ({ currentRoute, onRouteChange }) => {
   const { user } = useAuth();
   const isParent = user?.role === 'parent';
   const isTeacher = user?.role === 'teacher';
 
-  const studentNavItems = [
-    { id: 'student-dashboard', label: 'Learning Dashboard', icon: '🏠' },
-    { id: 'student-assignments', label: 'Assignments', icon: '📝' },
-    { id: 'student-video', label: 'Pre-Rendered Lessons', icon: '🎬' },
-    { id: 'student-quiz', label: 'Topic Quizzes', icon: '🎯' },
-    { id: 'student-adaptive', label: 'Adaptive Remediation', icon: '🔄' },
-    { id: 'student-mastery', label: 'Progress & Mastery', icon: '📈' },
+  const studentNavItems: NavItemDef[] = [
+    { id: 'student-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'student-assignments', label: 'Assignments', icon: ClipboardList },
+    { id: 'student-video', label: 'Video Lessons', icon: Film },
+    { id: 'student-quiz', label: 'Topic Quizzes', icon: CheckCircle2 },
+    { id: 'student-adaptive', label: 'Remediation', icon: RotateCcw },
+    { id: 'student-mastery', label: 'Mastery & Progress', icon: TrendingUp },
   ];
 
-  const parentNavItems = [
-    { id: 'parent-dashboard', label: "My Child's Learning", icon: '👨‍👩‍👧' },
+  const parentNavItems: NavItemDef[] = [
+    { id: 'parent-dashboard', label: "Student Progress", icon: Users },
   ];
 
-  const teacherNavItems = [
-    { id: 'readonly-dashboard', label: 'My Students & Class', icon: '👨‍🏫' },
-    { id: 'teacher-assignments', label: 'Assignments', icon: '📝' },
+  const teacherNavItems: NavItemDef[] = [
+    { id: 'readonly-dashboard', label: 'Class Overview', icon: GraduationCap },
+    { id: 'teacher-assignments', label: 'Assignments', icon: ClipboardList },
   ];
 
   const items = isParent ? parentNavItems : isTeacher ? teacherNavItems : studentNavItems;
@@ -38,30 +55,84 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ currentRoute, onRouteCha
   return (
     <aside
       style={{
-        width: '256px',
-        minWidth: '256px',
+        width: 'var(--learn-sidebar-width)',
+        minWidth: 'var(--learn-sidebar-width)',
         backgroundColor: 'var(--learn-surface)',
         borderRight: '1px solid var(--learn-border)',
         display: 'flex',
         flexDirection: 'column',
+        height: '100vh',
+        position: 'sticky',
+        top: 0,
       }}
     >
-      <div style={{ padding: '24px 20px', borderBottom: '1px solid var(--learn-border)' }}>
-        <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--learn-text)' }}>
-          {isParent ? 'Parent Portal' : isTeacher ? 'Teacher Portal' : 'Student Learning'}
-        </h2>
-        <p style={{ fontSize: '12px', color: 'var(--learn-text-secondary)', marginTop: '4px' }}>
-          {isParent
-            ? "My Child's Learning"
-            : isTeacher
-              ? 'My Students & Class Performance'
-              : 'Modular Concept Videos'}
-        </p>
+      {/* Brand Header */}
+      <div
+        style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid var(--learn-border)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          minHeight: 'var(--learn-header-height)',
+        }}
+      >
+        <div
+          style={{
+            width: '30px',
+            height: '30px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--learn-primary)',
+            color: '#FFFFFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <GraduationCap size={18} strokeWidth={2.2} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <h2 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--learn-text)', lineHeight: 1.2 }}>
+            {isParent ? 'Parent Portal' : isTeacher ? 'Teacher Portal' : 'Veyora Learn'}
+          </h2>
+          <p style={{ fontSize: '11px', color: 'var(--learn-text-secondary)', marginTop: '2px' }}>
+            {isParent
+              ? 'Academic Guardian View'
+              : isTeacher
+                ? 'Class Analytics'
+                : 'Modular Learning Studio'}
+          </p>
+        </div>
       </div>
 
-      <nav style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, overflowY: 'auto' }}>
+      {/* Navigation List */}
+      <nav
+        style={{
+          padding: '12px 10px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '3px',
+          flex: 1,
+          overflowY: 'auto',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '10px',
+            fontWeight: 600,
+            color: 'var(--learn-text-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            padding: '8px 10px 4px 10px',
+          }}
+        >
+          Curriculum
+        </div>
+
         {items.map((item) => {
           const isActive = currentRoute === item.id;
+          const Icon = item.icon;
           return (
             <button
               key={item.id}
@@ -71,39 +142,60 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ currentRoute, onRouteCha
                 alignItems: 'center',
                 gap: '10px',
                 width: '100%',
-                padding: '10px 14px',
-                borderRadius: '8px',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-md)',
                 border: 'none',
                 textAlign: 'left',
                 fontSize: '13px',
                 fontWeight: isActive ? 600 : 500,
-                backgroundColor: isActive ? 'rgba(37, 99, 235, 0.1)' : 'transparent',
+                backgroundColor: isActive ? 'var(--learn-primary-soft)' : 'transparent',
                 color: isActive ? 'var(--learn-primary)' : 'var(--learn-text-secondary)',
                 cursor: 'pointer',
+                transition: 'all var(--duration-fast) var(--ease)',
               }}
             >
-              {item.icon && <span>{item.icon}</span>}
-              <span>{item.label}</span>
+              <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {isActive && (
+                <span
+                  style={{
+                    width: '5px',
+                    height: '5px',
+                    borderRadius: '50%',
+                    backgroundColor: 'var(--learn-primary)',
+                  }}
+                />
+              )}
             </button>
           );
         })}
       </nav>
 
-      {/* Role Notice at Bottom */}
+      {/* Bottom Context Pill */}
       <div
         style={{
-          margin: '16px 12px',
-          padding: '12px',
-          borderRadius: '8px',
-          backgroundColor: 'rgba(0, 0, 0, 0.02)',
+          margin: '12px',
+          padding: '10px 12px',
+          borderRadius: 'var(--radius-md)',
+          backgroundColor: 'var(--learn-surface-raised)',
           border: '1px solid var(--learn-border)',
-          fontSize: '11px',
-          color: 'var(--learn-text-secondary)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
         }}
       >
-        {isParent && 'Dedicated parent monitoring: strictly linked child progress only.'}
-        {isTeacher && 'Class analytics restricted to assigned students.'}
-        {!isParent && !isTeacher && 'Pre-rendered ~5-6 min videos & adaptive quizzes.'}
+        <span
+          style={{
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            backgroundColor: 'var(--learn-success)',
+            flexShrink: 0,
+          }}
+        />
+        <div style={{ fontSize: '11px', color: 'var(--learn-text-secondary)', lineHeight: 1.4 }}>
+          {user?.name || 'Active Session'}
+        </div>
       </div>
     </aside>
   );
