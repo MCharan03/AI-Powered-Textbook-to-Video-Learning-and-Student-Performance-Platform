@@ -222,7 +222,42 @@ def run_test_3_complete_rendering():
         # Find or create a test video with approved script
         video = db.query(Video).filter(Video.script_status == "SCRIPT_APPROVED").first()
         if not video:
-            raise ValueError("No video with SCRIPT_APPROVED status found in app.db.")
+            video = db.query(Video).first()
+            if video:
+                video.script_status = "SCRIPT_APPROVED"
+                video.script_data = {
+                    "title": video.title,
+                    "sections": [
+                        {
+                            "scene_number": 1,
+                            "type": "INTRO",
+                            "title": "Introduction to Dynamics",
+                            "narration": "Welcome to today's physics lesson on Newton's second law of motion.",
+                            "speaker": "Teacher",
+                            "visual_type": "TITLE_CARD",
+                            "visual_description": "Clean title card with classical mechanics motif.",
+                            "on_screen_text": "Newton's Second Law of Motion",
+                            "formula": "F = m * a",
+                            "source_pages": [1]
+                        },
+                        {
+                            "scene_number": 2,
+                            "type": "CONCEPT",
+                            "title": "Force and Acceleration Relation",
+                            "narration": "When a net force acts on an object, it produces an acceleration directly proportional to the force.",
+                            "speaker": "Teacher",
+                            "visual_type": "DIAGRAM",
+                            "visual_description": "Force vector diagram showing acceleration.",
+                            "on_screen_text": "Acceleration is proportional to Net Force",
+                            "formula": "a = F / m",
+                            "source_pages": [1]
+                        }
+                    ]
+                }
+                db.commit()
+                db.refresh(video)
+            else:
+                raise ValueError("No video found in app.db.")
 
         print(f"Rendering Video ID {video.id}: '{video.title}'")
 

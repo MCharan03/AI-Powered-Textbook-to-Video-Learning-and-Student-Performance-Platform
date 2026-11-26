@@ -869,7 +869,6 @@ class GoogleGeminiTTSProvider(TTSProvider):
             from google.genai import types
             voice_config_obj = types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=chosen_voice),
-                voice=chosen_voice
             )
             speech_config = types.SpeechConfig(
                 voice_config=voice_config_obj,
@@ -927,14 +926,12 @@ class GoogleGeminiTTSProvider(TTSProvider):
                             speaker="Teacher",
                             voice_config=types.VoiceConfig(
                                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=t_voice),
-                                voice=t_voice
                             )
                         ),
                         types.SpeakerVoiceConfig(
                             speaker="Student",
                             voice_config=types.VoiceConfig(
                                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=s_voice),
-                                voice=s_voice
                             )
                         )
                     ]
@@ -1248,29 +1245,42 @@ class VisualSlideRenderer:
         candidates: List[str] = []
         if mono:
             candidates = [
+                "C:/Windows/Fonts/cour.ttf",
+                "C:/Windows/Fonts/courbd.ttf",
+                "C:/Windows/Fonts/consola.ttf",
+                "C:/Windows/Fonts/consolab.ttf",
                 "/System/Library/Fonts/Menlo.ttc",
                 "/System/Library/Fonts/Supplemental/Courier New.ttf",
                 "/Library/Fonts/Courier New.ttf",
                 "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
                 "Menlo.ttc",
                 "Courier New.ttf",
+                "cour.ttf",
                 "DejaVuSansMono.ttf"
             ]
         elif bold:
             candidates = [
+                "C:/Windows/Fonts/arialbd.ttf",
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/calibrib.ttf",
                 "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
                 "/System/Library/Fonts/Helvetica.ttc",
                 "/Library/Fonts/Arial Bold.ttf",
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "arialbd.ttf",
                 "Arial Bold.ttf",
                 "DejaVuSans-Bold.ttf"
             ]
         else:
             candidates = [
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/calibri.ttf",
+                "C:/Windows/Fonts/segoeui.ttf",
                 "/System/Library/Fonts/Supplemental/Arial.ttf",
                 "/System/Library/Fonts/Helvetica.ttc",
                 "/Library/Fonts/Arial.ttf",
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "arial.ttf",
                 "Arial.ttf",
                 "DejaVuSans.ttf"
             ]

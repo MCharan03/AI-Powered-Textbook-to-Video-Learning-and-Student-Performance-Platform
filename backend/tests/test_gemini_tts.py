@@ -541,10 +541,8 @@ def test_gemini_3_8_multi_speaker_request_schema():
     assert len(multi_sc.speaker_voice_configs) == 2
     assert multi_sc.speaker_voice_configs[0].speaker == "Teacher"
     assert multi_sc.speaker_voice_configs[0].voice_config.prebuilt_voice_config.voice_name == "Aoede"
-    assert multi_sc.speaker_voice_configs[0].voice_config.voice == "Aoede"
     assert multi_sc.speaker_voice_configs[1].speaker == "Student"
     assert multi_sc.speaker_voice_configs[1].voice_config.prebuilt_voice_config.voice_name == "Puck"
-    assert multi_sc.speaker_voice_configs[1].voice_config.voice == "Puck"
     assert cfg.speech_config.language_code == "en-IN"
 
     # Test synthesize_multi_speaker with mock client
